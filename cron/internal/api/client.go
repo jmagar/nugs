@@ -3,7 +3,7 @@ package api
 import (
 	"encoding/json"
 	"fmt"
-	"io/ioutil"
+	"io"
 	"log"
 	"net/http"
 	"net/url"
@@ -71,7 +71,9 @@ func NewSafeAPIClient() *SafeAPIClient {
 	stats := loadAPIStats()
 
 	// Ensure log directory exists
-	os.MkdirAll(config.LogDirectory, 0755)
+	if err := os.MkdirAll(config.LogDirectory, 0755); err != nil {
+		log.Printf("Warning: failed to create log directory %s: %v", config.LogDirectory, err)
+	}
 
 	return &SafeAPIClient{
 		config: config,
@@ -215,7 +217,7 @@ func (c *SafeAPIClient) safeGet(url, endpoint string) ([]byte, error) {
 		}
 
 		defer resp.Body.Close()
-		body, err = ioutil.ReadAll(resp.Body)
+		body, err = io.ReadAll(resp.Body)
 
 		logEntry.ResponseCode = resp.StatusCode
 
@@ -354,7 +356,9 @@ func (c *SafeAPIClient) logRequest(entry APILogEntry) {
 	}
 	defer file.Close()
 
-	file.WriteString(logLine)
+	if _, err := file.WriteString(logLine); err != nil {
+		log.Printf("Warning: failed to write to log file: %v", err)
+	}
 }
 
 // LoadAPIConfig loads configuration from configs/api_config.json
@@ -370,8 +374,10 @@ func LoadAPIConfig() *APIConfig {
 		LogDirectory:         "logs/api_logs",
 	}
 
-	if data, err := ioutil.ReadFile("configs/api_config.json"); err == nil {
-		json.Unmarshal(data, config)
+	if data, err := os.ReadFile("configs/api_config.json"); err == nil {
+		if err := json.Unmarshal(data, config); err != nil {
+			log.Printf("Warning: failed to unmarshal API config: %v", err)
+		}
 	}
 
 	return config
@@ -386,8 +392,10 @@ func loadAPIStats() *APIStats {
 		CurrentMinute: time.Now().Minute(),
 	}
 
-	if data, err := ioutil.ReadFile("data/api_stats.json"); err == nil {
-		json.Unmarshal(data, stats)
+	if data, err := os.ReadFile("data/api_stats.json"); err == nil {
+		if err := json.Unmarshal(data, stats); err != nil {
+			log.Printf("Warning: failed to unmarshal API stats: %v", err)
+		}
 	}
 
 	return stats
@@ -395,8 +403,14 @@ func loadAPIStats() *APIStats {
 
 // saveAPIStats saves current statistics to data/api_stats.json
 func (c *SafeAPIClient) saveAPIStats() {
-	data, _ := json.MarshalIndent(c.stats, "", "  ")
-	ioutil.WriteFile("data/api_stats.json", data, 0644)
+	data, err := json.MarshalIndent(c.stats, "", "  ")
+	if err != nil {
+		log.Printf("Warning: failed to marshal API stats: %v", err)
+		return
+	}
+	if err := os.WriteFile("data/api_stats.json", data, 0644); err != nil {
+		log.Printf("Warning: failed to write API stats file: %v", err)
+	}
 }
 
 // GetStats returns current API statistics

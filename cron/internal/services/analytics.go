@@ -3,6 +3,7 @@ package services
 import (
 	"database/sql"
 	"fmt"
+	"log"
 	"os"
 	"strings"
 	"syscall"
@@ -86,6 +87,26 @@ func (s *AnalyticsService) GenerateReport(query *models.AnalyticsQuery) (*models
 		report.Performance = performance
 		report.Summary = s.generatePerformanceSummary(performance)
 
+	case "summary":
+		// Generate a comprehensive summary report
+		collectionStats, err := s.GetCollectionStats(query)
+		if err != nil {
+			log.Printf("Error getting collection stats for summary report: %v", err)
+		}
+		systemMetrics, err := s.GetSystemMetrics()
+		if err != nil {
+			log.Printf("Error getting system metrics for summary report: %v", err)
+		}
+		downloadAnalytics, err := s.GetDownloadAnalytics(query)
+		if err != nil {
+			log.Printf("Error getting download analytics for summary report: %v", err)
+		}
+
+		report.CollectionStats = collectionStats
+		report.SystemMetrics = systemMetrics
+		report.DownloadAnalytics = downloadAnalytics
+		report.Summary = "Comprehensive summary report generated successfully"
+
 	default:
 		return nil, fmt.Errorf("unsupported report type: %s", query.ReportType)
 	}
@@ -122,33 +143,51 @@ func (s *AnalyticsService) GetCollectionStats(query *models.AnalyticsQuery) (*mo
 	}
 
 	// Recent activity
-	s.DB.QueryRow(`
+	if err := s.DB.QueryRow(`
 		SELECT COUNT(*) FROM shows WHERE date(created_at) = date('now')
-	`).Scan(&stats.RecentActivity.NewShowsToday)
+	`).Scan(&stats.RecentActivity.NewShowsToday); err != nil {
+		log.Printf("Error scanning shows today: %v", err)
+		stats.RecentActivity.NewShowsToday = 0
+	}
 
-	s.DB.QueryRow(`
+	if err := s.DB.QueryRow(`
 		SELECT COUNT(*) FROM shows 
 		WHERE created_at >= datetime('now', '-7 days')
-	`).Scan(&stats.RecentActivity.NewShowsThisWeek)
+	`).Scan(&stats.RecentActivity.NewShowsThisWeek); err != nil {
+		log.Printf("Error scanning shows this week: %v", err)
+		stats.RecentActivity.NewShowsThisWeek = 0
+	}
 
-	s.DB.QueryRow(`
+	if err := s.DB.QueryRow(`
 		SELECT COUNT(*) FROM shows 
 		WHERE created_at >= datetime('now', 'start of month')
-	`).Scan(&stats.RecentActivity.NewShowsThisMonth)
+	`).Scan(&stats.RecentActivity.NewShowsThisMonth); err != nil {
+		log.Printf("Error scanning shows this month: %v", err)
+		stats.RecentActivity.NewShowsThisMonth = 0
+	}
 
-	s.DB.QueryRow(`
+	if err := s.DB.QueryRow(`
 		SELECT COUNT(*) FROM downloads WHERE date(created_at) = date('now')
-	`).Scan(&stats.RecentActivity.DownloadsToday)
+	`).Scan(&stats.RecentActivity.DownloadsToday); err != nil {
+		log.Printf("Error scanning downloads today: %v", err)
+		stats.RecentActivity.DownloadsToday = 0
+	}
 
-	s.DB.QueryRow(`
+	if err := s.DB.QueryRow(`
 		SELECT COUNT(*) FROM downloads 
 		WHERE created_at >= datetime('now', '-7 days')
-	`).Scan(&stats.RecentActivity.DownloadsThisWeek)
+	`).Scan(&stats.RecentActivity.DownloadsThisWeek); err != nil {
+		log.Printf("Error scanning downloads this week: %v", err)
+		stats.RecentActivity.DownloadsThisWeek = 0
+	}
 
-	s.DB.QueryRow(`
+	if err := s.DB.QueryRow(`
 		SELECT COUNT(*) FROM downloads 
 		WHERE created_at >= datetime('now', 'start of month')
-	`).Scan(&stats.RecentActivity.DownloadsThisMonth)
+	`).Scan(&stats.RecentActivity.DownloadsThisMonth); err != nil {
+		log.Printf("Error scanning downloads this month: %v", err)
+		stats.RecentActivity.DownloadsThisMonth = 0
+	}
 
 	return stats, nil
 }
@@ -224,7 +263,7 @@ func (s *AnalyticsService) GetArtistAnalytics(query *models.AnalyticsQuery) ([]m
 
 		// Get preferred format and quality
 		var preferredFormat, preferredQuality sql.NullString
-		s.DB.QueryRow(`
+		if err := s.DB.QueryRow(`
 			SELECT format, quality
 			FROM downloads d
 			JOIN shows s ON d.show_id = s.id
@@ -232,7 +271,9 @@ func (s *AnalyticsService) GetArtistAnalytics(query *models.AnalyticsQuery) ([]m
 			GROUP BY format, quality
 			ORDER BY COUNT(*) DESC
 			LIMIT 1
-		`, artist.ArtistID).Scan(&preferredFormat, &preferredQuality)
+		`, artist.ArtistID).Scan(&preferredFormat, &preferredQuality); err != nil {
+			log.Printf("Warning: failed to get preferred format for artist %d: %v", artist.ArtistID, err)
+		}
 
 		if preferredFormat.Valid {
 			artist.PreferredFormat = preferredFormat.String
@@ -242,16 +283,20 @@ func (s *AnalyticsService) GetArtistAnalytics(query *models.AnalyticsQuery) ([]m
 		}
 
 		// Growth metrics
-		s.DB.QueryRow(`
+		if err := s.DB.QueryRow(`
 			SELECT COUNT(*) FROM shows s 
 			WHERE s.artist_id = ? AND s.created_at >= datetime('now', '-30 days')
-		`, artist.ArtistID).Scan(&artist.ShowGrowthLastMonth)
+		`, artist.ArtistID).Scan(&artist.ShowGrowthLastMonth); err != nil {
+			log.Printf("Warning: failed to get show growth for artist %d: %v", artist.ArtistID, err)
+		}
 
-		s.DB.QueryRow(`
+		if err := s.DB.QueryRow(`
 			SELECT COUNT(*) FROM downloads d
 			JOIN shows s ON d.show_id = s.id
 			WHERE s.artist_id = ? AND d.created_at >= datetime('now', '-30 days')
-		`, artist.ArtistID).Scan(&artist.DownloadGrowthLastMonth)
+		`, artist.ArtistID).Scan(&artist.DownloadGrowthLastMonth); err != nil {
+			log.Printf("Warning: failed to get download growth for artist %d: %v", artist.ArtistID, err)
+		}
 
 		analytics = append(analytics, artist)
 	}
@@ -395,7 +440,10 @@ func (s *AnalyticsService) GetDownloadAnalytics(query *models.AnalyticsQuery) (*
 			var count int64
 			if rows.Scan(&hourStr, &count) == nil {
 				var hour int
-				fmt.Sscanf(hourStr, "%d", &hour)
+				if _, err := fmt.Sscanf(hourStr, "%d", &hour); err != nil {
+					log.Printf("Warning: failed to parse hour string '%s': %v", hourStr, err)
+					continue
+				}
 				hourMap[hour] = count
 			}
 		}
@@ -423,9 +471,11 @@ func (s *AnalyticsService) GetSystemMetrics() (*models.SystemMetrics, error) {
 	metrics.DatabaseSize = dbSizeMB
 
 	// File and storage info
-	s.DB.QueryRow(`
+	if err := s.DB.QueryRow(`
 		SELECT COUNT(*) FROM downloads WHERE file_path IS NOT NULL AND file_path != ''
-	`).Scan(&metrics.TotalFiles)
+	`).Scan(&metrics.TotalFiles); err != nil {
+		log.Printf("Warning: failed to get total files: %v", err)
+	}
 
 	// System storage (simplified)
 	stat := &syscall.Statfs_t{}
@@ -435,16 +485,20 @@ func (s *AnalyticsService) GetSystemMetrics() (*models.SystemMetrics, error) {
 	}
 
 	// Active monitors
-	s.DB.QueryRow(`SELECT COUNT(*) FROM artist_monitors WHERE status = 'active'`).Scan(&metrics.ActiveMonitors)
+	if err := s.DB.QueryRow(`SELECT COUNT(*) FROM artist_monitors WHERE status = 'active'`).Scan(&metrics.ActiveMonitors); err != nil {
+		log.Printf("Warning: failed to get active monitors: %v", err)
+	}
 
 	// System uptime
 	metrics.SystemUptime = time.Since(s.startTime).String()
 
 	// Last catalog refresh
 	var lastRefreshStr sql.NullString
-	s.DB.QueryRow(`
+	if err := s.DB.QueryRow(`
 		SELECT value FROM system_config WHERE key = 'last_catalog_refresh'
-	`).Scan(&lastRefreshStr)
+	`).Scan(&lastRefreshStr); err != nil {
+		log.Printf("Warning: failed to get last refresh time: %v", err)
+	}
 	if lastRefreshStr.Valid {
 		metrics.LastCatalogRefresh = &lastRefreshStr.String
 	}

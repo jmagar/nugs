@@ -3,8 +3,8 @@ package main
 import (
 	"encoding/json"
 	"fmt"
-	"io/ioutil"
 	"log"
+	"os"
 	"os/exec"
 	"path/filepath"
 	"strings"
@@ -124,7 +124,7 @@ func main() {
 }
 
 func loadConfig(filename string) (*models.Config, error) {
-	data, err := ioutil.ReadFile(filename)
+	data, err := os.ReadFile(filename)
 	if err != nil {
 		return nil, err
 	}
@@ -135,7 +135,7 @@ func loadConfig(filename string) (*models.Config, error) {
 }
 
 func loadMonitorConfig(filename string) (*models.MonitorConfig, error) {
-	data, err := ioutil.ReadFile(filename)
+	data, err := os.ReadFile(filename)
 	if err != nil {
 		return nil, err
 	}
@@ -146,7 +146,7 @@ func loadMonitorConfig(filename string) (*models.MonitorConfig, error) {
 }
 
 func loadShowsData() *models.ShowsData {
-	data, err := ioutil.ReadFile("data/shows.json")
+	data, err := os.ReadFile("data/shows.json")
 	if err != nil {
 		// File doesn't exist, return empty struct
 		return &models.ShowsData{
@@ -155,7 +155,9 @@ func loadShowsData() *models.ShowsData {
 	}
 
 	var shows models.ShowsData
-	json.Unmarshal(data, &shows)
+	if err := json.Unmarshal(data, &shows); err != nil {
+		log.Printf("Warning: failed to unmarshal shows data: %v", err)
+	}
 	if shows.Artists == nil {
 		shows.Artists = make(map[string]models.ArtistShowData)
 	}
@@ -172,8 +174,62 @@ func loadShowsData() *models.ShowsData {
 }
 
 func saveShowsData(shows *models.ShowsData) {
-	data, _ := json.MarshalIndent(shows, "", "  ")
-	ioutil.WriteFile("data/shows.json", data, 0644)
+	data, err := json.MarshalIndent(shows, "", "  ")
+	if err != nil {
+		fmt.Printf("Warning: failed to marshal shows data: %v\n", err)
+		return
+	}
+
+	// Ensure the data directory exists
+	if err := os.MkdirAll("data", 0755); err != nil {
+		fmt.Printf("Warning: failed to create data directory: %v\n", err)
+		return
+	}
+
+	// Create a temporary file in the data directory
+	tempFile, err := os.CreateTemp("data", "shows.json.tmp.*")
+	if err != nil {
+		fmt.Printf("Warning: failed to create temp file: %v\n", err)
+		return
+	}
+	tempPath := tempFile.Name()
+
+	// Write data to temp file
+	if _, err := tempFile.Write(data); err != nil {
+		tempFile.Close()
+		os.Remove(tempPath)
+		fmt.Printf("Warning: failed to write to temp file: %v\n", err)
+		return
+	}
+
+	// Flush data to disk
+	if err := tempFile.Sync(); err != nil {
+		tempFile.Close()
+		os.Remove(tempPath)
+		fmt.Printf("Warning: failed to sync temp file: %v\n", err)
+		return
+	}
+
+	// Close temp file
+	if err := tempFile.Close(); err != nil {
+		os.Remove(tempPath)
+		fmt.Printf("Warning: failed to close temp file: %v\n", err)
+		return
+	}
+
+	// Set correct permissions
+	if err := os.Chmod(tempPath, 0644); err != nil {
+		os.Remove(tempPath)
+		fmt.Printf("Warning: failed to set permissions on temp file: %v\n", err)
+		return
+	}
+
+	// Atomically replace the target file
+	if err := os.Rename(tempPath, "data/shows.json"); err != nil {
+		os.Remove(tempPath)
+		fmt.Printf("Warning: failed to rename temp file to final location: %v\n", err)
+		return
+	}
 }
 
 func isShowDownloaded(artistName string, containerID int, shows *models.ShowsData) bool {

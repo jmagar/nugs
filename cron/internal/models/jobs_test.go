@@ -93,11 +93,13 @@ func TestJobManager_ListJobs(t *testing.T) {
 	job3 := jm.CreateJob(JobTypeMonitorCheck)
 
 	// Update one job to running
-	jm.UpdateJob(job2.ID, func(j *Job) {
+	if err := jm.UpdateJob(job2.ID, func(j *Job) {
 		j.Status = JobStatusRunning
 		j.Progress = 25
 		j.Message = "Downloading..."
-	})
+	}); err != nil {
+		t.Errorf("Failed to update job: %v", err)
+	}
 
 	jobs := jm.ListJobs()
 	assert.Equal(t, 3, len(jobs))
@@ -118,10 +120,12 @@ func TestJobManager_CleanupOldJobs(t *testing.T) {
 
 	// Create old completed job by manually setting CreatedAt
 	oldJob := jm.CreateJob(JobTypeDownload)
-	jm.UpdateJob(oldJob.ID, func(j *Job) {
+	if err := jm.UpdateJob(oldJob.ID, func(j *Job) {
 		j.Status = JobStatusCompleted
 		j.CreatedAt = time.Now().Add(-25 * time.Hour) // Make it old
-	})
+	}); err != nil {
+		t.Errorf("Failed to update job: %v", err)
+	}
 
 	// Create recent job (will have current CreatedAt)
 	recentJob := jm.CreateJob(JobTypeCatalogRefresh)

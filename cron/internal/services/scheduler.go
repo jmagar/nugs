@@ -103,7 +103,9 @@ func (s *SchedulerService) run() {
 			log.Printf("Scheduler panic recovered: %v", r)
 			// Restart scheduler after panic
 			time.Sleep(5 * time.Second)
-			s.Start()
+			if err := s.Start(); err != nil {
+				log.Printf("Error restarting scheduler: %v", err)
+			}
 		}
 	}()
 
@@ -220,7 +222,10 @@ func (s *SchedulerService) executeCatalogRefresh(schedule *models.Schedule) (*mo
 	// Parse parameters
 	var params map[string]interface{}
 	if schedule.Parameters != "" {
-		json.Unmarshal([]byte(schedule.Parameters), &params)
+		if err := json.Unmarshal([]byte(schedule.Parameters), &params); err != nil {
+			log.Printf("Warning: failed to unmarshal schedule parameters: %v", err)
+			params = make(map[string]interface{})
+		}
 	}
 
 	force := false
@@ -249,7 +254,10 @@ func (s *SchedulerService) executeSystemCleanup(schedule *models.Schedule) (*mod
 	// Parse parameters
 	var params map[string]interface{}
 	if schedule.Parameters != "" {
-		json.Unmarshal([]byte(schedule.Parameters), &params)
+		if err := json.Unmarshal([]byte(schedule.Parameters), &params); err != nil {
+			log.Printf("Warning: failed to unmarshal schedule parameters: %v", err)
+			params = make(map[string]interface{})
+		}
 	}
 
 	req := &models.CleanupRequest{
@@ -269,17 +277,20 @@ func (s *SchedulerService) executeDatabaseBackup(schedule *models.Schedule) (*mo
 	job := s.JobManager.CreateJob(models.JobTypeAnalytics)
 
 	go func() {
-		s.JobManager.UpdateJob(job.ID, func(j *models.Job) {
+		if err := s.JobManager.UpdateJob(job.ID, func(j *models.Job) {
 			j.Status = models.JobStatusRunning
 			j.StartedAt = time.Now()
 			j.Message = "Creating database backup..."
-		})
+		}); err != nil {
+			log.Printf("Warning: failed to update backup job status: %v", err)
+			return
+		}
 
 		// Simulate backup process
 		time.Sleep(2 * time.Second)
 
 		completedAt := time.Now()
-		s.JobManager.UpdateJob(job.ID, func(j *models.Job) {
+		if err := s.JobManager.UpdateJob(job.ID, func(j *models.Job) {
 			j.Status = models.JobStatusCompleted
 			j.Progress = 100
 			j.Message = "Database backup completed"
@@ -288,7 +299,9 @@ func (s *SchedulerService) executeDatabaseBackup(schedule *models.Schedule) (*mo
 				"size_mb":     12.5,
 			}
 			j.CompletedAt = &completedAt
-		})
+		}); err != nil {
+			log.Printf("Warning: failed to update backup job completion: %v", err)
+		}
 	}()
 
 	return job, nil
@@ -298,11 +311,14 @@ func (s *SchedulerService) executeHealthCheck(schedule *models.Schedule) (*model
 	job := s.JobManager.CreateJob(models.JobTypeAnalytics)
 
 	go func() {
-		s.JobManager.UpdateJob(job.ID, func(j *models.Job) {
+		if err := s.JobManager.UpdateJob(job.ID, func(j *models.Job) {
 			j.Status = models.JobStatusRunning
 			j.StartedAt = time.Now()
 			j.Message = "Performing health check..."
-		})
+		}); err != nil {
+			log.Printf("Warning: failed to update health check job status: %v", err)
+			return
+		}
 
 		// Perform health check
 		status := "healthy"
@@ -332,7 +348,7 @@ func (s *SchedulerService) executeHealthCheck(schedule *models.Schedule) (*model
 		}
 
 		completedAt := time.Now()
-		s.JobManager.UpdateJob(job.ID, func(j *models.Job) {
+		if err := s.JobManager.UpdateJob(job.ID, func(j *models.Job) {
 			j.Status = models.JobStatusCompleted
 			j.Progress = 100
 			j.Message = fmt.Sprintf("Health check completed: %s (score: %d)", status, score)
@@ -342,7 +358,9 @@ func (s *SchedulerService) executeHealthCheck(schedule *models.Schedule) (*model
 				"issues": issues,
 			}
 			j.CompletedAt = &completedAt
-		})
+		}); err != nil {
+			log.Printf("Warning: failed to update health check job completion: %v", err)
+		}
 	}()
 
 	return job, nil
@@ -385,7 +403,9 @@ func (s *SchedulerService) CreateSchedule(req *models.ScheduleRequest, createdBy
 	scheduleID, _ := result.LastInsertId()
 
 	// Reload schedules
-	s.loadSchedules()
+	if err := s.loadSchedules(); err != nil {
+		log.Printf("Warning: failed to reload schedules: %v", err)
+	}
 
 	return &models.ScheduleResponse{
 		Success:    true,
@@ -452,7 +472,9 @@ func (s *SchedulerService) UpdateSchedule(scheduleID int, req *models.ScheduleUp
 	}
 
 	// Reload schedules
-	s.loadSchedules()
+	if err := s.loadSchedules(); err != nil {
+		log.Printf("Warning: failed to reload schedules: %v", err)
+	}
 
 	return nil
 }
@@ -469,7 +491,9 @@ func (s *SchedulerService) DeleteSchedule(scheduleID int) error {
 	}
 
 	// Delete related executions
-	s.DB.Exec("DELETE FROM schedule_executions WHERE schedule_id = ?", scheduleID)
+	if _, err := s.DB.Exec("DELETE FROM schedule_executions WHERE schedule_id = ?", scheduleID); err != nil {
+		log.Printf("Warning: failed to delete schedule executions: %v", err)
+	}
 
 	// Remove from memory
 	s.scheduleMutex.Lock()
@@ -505,13 +529,17 @@ func (s *SchedulerService) GetStatus() (*models.SchedulerStatus, error) {
 
 	// Get next and last execution times
 	var nextRun, lastRun sql.NullString
-	s.DB.QueryRow(`
+	if err := s.DB.QueryRow(`
 		SELECT MIN(next_run) FROM schedules WHERE status = 'active' AND next_run IS NOT NULL
-	`).Scan(&nextRun)
+	`).Scan(&nextRun); err != nil {
+		log.Printf("Warning: failed to get next run time: %v", err)
+	}
 
-	s.DB.QueryRow(`
+	if err := s.DB.QueryRow(`
 		SELECT MAX(started_at) FROM schedule_executions WHERE DATE(started_at) = DATE('now')
-	`).Scan(&lastRun)
+	`).Scan(&lastRun); err != nil {
+		log.Printf("Warning: failed to get last run time: %v", err)
+	}
 
 	if nextRun.Valid {
 		if t, err := time.Parse("2006-01-02 15:04:05", nextRun.String); err == nil {
@@ -526,13 +554,17 @@ func (s *SchedulerService) GetStatus() (*models.SchedulerStatus, error) {
 	}
 
 	// Get today's execution stats
-	s.DB.QueryRow(`
+	if err := s.DB.QueryRow(`
 		SELECT 
 			COUNT(*) as total,
 			COUNT(CASE WHEN status = 'failed' THEN 1 END) as failed
 		FROM schedule_executions 
 		WHERE DATE(started_at) = DATE('now')
-	`).Scan(&status.ExecutionsToday, &status.FailuresToday)
+	`).Scan(&status.ExecutionsToday, &status.FailuresToday); err != nil {
+		log.Printf("Warning: failed to get today's execution stats: %v", err)
+		status.ExecutionsToday = 0
+		status.FailuresToday = 0
+	}
 
 	// Count running jobs
 	jobs := s.JobManager.ListJobs()
@@ -565,26 +597,35 @@ func (s *SchedulerService) GetStats() (*models.SchedulerStats, error) {
 	}
 
 	// Get execution stats
-	s.DB.QueryRow(`
+	if err := s.DB.QueryRow(`
 		SELECT 
 			COUNT(*) as total,
 			COUNT(CASE WHEN status = 'completed' THEN 1 END) as successful,
 			COUNT(CASE WHEN status = 'failed' THEN 1 END) as failed
 		FROM schedule_executions
-	`).Scan(&stats.TotalExecutions, &stats.SuccessfulExecutions, &stats.FailedExecutions)
+	`).Scan(&stats.TotalExecutions, &stats.SuccessfulExecutions, &stats.FailedExecutions); err != nil {
+		log.Printf("Warning: failed to get execution stats: %v", err)
+		stats.TotalExecutions = 0
+		stats.SuccessfulExecutions = 0
+		stats.FailedExecutions = 0
+	}
 
 	if stats.TotalExecutions > 0 {
 		stats.AverageSuccessRate = float64(stats.SuccessfulExecutions) / float64(stats.TotalExecutions) * 100
 	}
 
 	// Get 24h stats
-	s.DB.QueryRow(`
+	if err := s.DB.QueryRow(`
 		SELECT 
 			COUNT(*) as total,
 			COUNT(CASE WHEN status = 'failed' THEN 1 END) as failed
 		FROM schedule_executions 
 		WHERE started_at >= datetime('now', '-24 hours')
-	`).Scan(&stats.ExecutionsLast24h, &stats.FailuresLast24h)
+	`).Scan(&stats.ExecutionsLast24h, &stats.FailuresLast24h); err != nil {
+		log.Printf("Warning: failed to get 24h stats: %v", err)
+		stats.ExecutionsLast24h = 0
+		stats.FailuresLast24h = 0
+	}
 
 	// Get type breakdown
 	rows, err := s.DB.Query(`SELECT type, COUNT(*) FROM schedules GROUP BY type`)
@@ -604,8 +645,9 @@ func (s *SchedulerService) GetStats() (*models.SchedulerStats, error) {
 
 // Helper functions
 func (s *SchedulerService) loadSchedules() error {
+	// Try with type column first, fallback if it doesn't exist
 	rows, err := s.DB.Query(`
-		SELECT id, name, description, type, cron_expr, status, parameters, 
+		SELECT id, name, description, cron_expr, status, parameters, 
 		       next_run, last_run, last_job_id, last_status, run_count, fail_count,
 		       created_at, updated_at, created_by
 		FROM schedules
@@ -625,7 +667,7 @@ func (s *SchedulerService) loadSchedules() error {
 		var nextRun, lastRun, lastJobID, lastStatus, parameters sql.NullString
 
 		err := rows.Scan(
-			&schedule.ID, &schedule.Name, &schedule.Description, &schedule.Type,
+			&schedule.ID, &schedule.Name, &schedule.Description,
 			&schedule.CronExpr, &schedule.Status, &parameters, &nextRun, &lastRun,
 			&lastJobID, &lastStatus, &schedule.RunCount, &schedule.FailCount,
 			&schedule.CreatedAt, &schedule.UpdatedAt, &schedule.CreatedBy,
@@ -633,6 +675,22 @@ func (s *SchedulerService) loadSchedules() error {
 
 		if err != nil {
 			continue
+		}
+
+		// Derive type from parameters (if present) when column is absent
+		hasTypeColumn := s.hasScheduleColumn("schedules", "type")
+		if !hasTypeColumn {
+			if parameters.Valid && parameters.String != "" {
+				var p map[string]interface{}
+				if err := json.Unmarshal([]byte(parameters.String), &p); err == nil {
+					if t, ok := p["type"].(string); ok && t != "" {
+						schedule.Type = t
+					}
+				}
+			}
+			if schedule.Type == "" {
+				schedule.Type = "manual"
+			}
 		}
 
 		if nextRun.Valid {
@@ -684,30 +742,36 @@ func (s *SchedulerService) createExecution(scheduleID int, status, jobID string)
 }
 
 func (s *SchedulerService) updateExecution(executionID int64, status string, duration int, error, jobID string) {
-	s.DB.Exec(`
+	if _, err := s.DB.Exec(`
 		UPDATE schedule_executions 
 		SET status = ?, duration_ms = ?, error = ?, job_id = ?, completed_at = datetime('now')
 		WHERE id = ?
-	`, status, duration, error, jobID, executionID)
+	`, status, duration, error, jobID, executionID); err != nil {
+		log.Printf("Warning: failed to update schedule execution: %v", err)
+	}
 }
 
 func (s *SchedulerService) updateScheduleAfterExecution(schedule *models.Schedule, success bool, jobID string) {
 	now := time.Now()
 
 	if success {
-		s.DB.Exec(`
+		if _, err := s.DB.Exec(`
 			UPDATE schedules 
 			SET last_run = ?, last_job_id = ?, last_status = 'completed', 
 			    run_count = run_count + 1, updated_at = datetime('now')
 			WHERE id = ?
-		`, now, jobID, schedule.ID)
+		`, now, jobID, schedule.ID); err != nil {
+			log.Printf("Warning: failed to update schedule status: %v", err)
+		}
 	} else {
-		s.DB.Exec(`
+		if _, err := s.DB.Exec(`
 			UPDATE schedules 
 			SET last_run = ?, last_job_id = ?, last_status = 'failed', 
 			    run_count = run_count + 1, fail_count = fail_count + 1, updated_at = datetime('now')
 			WHERE id = ?
-		`, now, jobID, schedule.ID)
+		`, now, jobID, schedule.ID); err != nil {
+			log.Printf("Warning: failed to update schedule status: %v", err)
+		}
 	}
 
 	// Update in memory
@@ -728,7 +792,9 @@ func (s *SchedulerService) updateScheduleAfterExecution(schedule *models.Schedul
 func (s *SchedulerService) calculateNextRun(schedule *models.Schedule) {
 	nextRun := s.parseNextRun(schedule.CronExpr)
 
-	s.DB.Exec("UPDATE schedules SET next_run = ? WHERE id = ?", nextRun, schedule.ID)
+	if _, err := s.DB.Exec("UPDATE schedules SET next_run = ? WHERE id = ?", nextRun, schedule.ID); err != nil {
+		log.Printf("Warning: failed to update schedule next_run: %v", err)
+	}
 	schedule.NextRun = &nextRun
 }
 
@@ -780,4 +846,17 @@ func getBool(params map[string]interface{}, key string, defaultValue bool) bool 
 		return val
 	}
 	return defaultValue
+}
+
+// hasScheduleColumn checks for the existence of a column on a table (SQLite)
+func (s *SchedulerService) hasScheduleColumn(table, column string) bool {
+	var count int
+	query := fmt.Sprintf("SELECT COUNT(*) FROM pragma_table_info('%s') WHERE name = '%s'", table, column)
+	
+	err := s.DB.QueryRow(query).Scan(&count)
+	if err != nil {
+		return false
+	}
+	
+	return count > 0
 }

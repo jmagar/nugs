@@ -4,6 +4,7 @@ import (
 	"crypto/sha256"
 	"database/sql"
 	"fmt"
+	"log"
 	"os"
 	"runtime"
 	"syscall"
@@ -105,8 +106,7 @@ func (s *AdminService) UpdateUser(userID int, req *models.UserUpdateRequest, upd
 	updates = append(updates, "updated_at = datetime('now')")
 	args = append(args, userID)
 
-	query := fmt.Sprintf("UPDATE users SET %s WHERE id = ?",
-		fmt.Sprintf("%s", updates[0]))
+	query := fmt.Sprintf("UPDATE users SET %s WHERE id = ?", updates[0])
 	for i := 1; i < len(updates); i++ {
 		query = fmt.Sprintf("%s, %s", query, updates[i])
 	}
@@ -373,7 +373,10 @@ func (s *AdminService) getStorageStatus() (*models.StorageStatus, error) {
 
 	// Count files
 	var fileCount int64
-	s.DB.QueryRow(`SELECT COUNT(*) FROM downloads WHERE file_path IS NOT NULL AND file_path != ''`).Scan(&fileCount)
+	if err := s.DB.QueryRow(`SELECT COUNT(*) FROM downloads WHERE file_path IS NOT NULL AND file_path != ''`).Scan(&fileCount); err != nil {
+		log.Printf("Error counting files: %v", err)
+		fileCount = 0
+	}
 	status.FileCount = fileCount
 
 	return status, nil
@@ -520,21 +523,26 @@ func (s *AdminService) RunCleanup(req *models.CleanupRequest, runBy string) (*mo
 func (s *AdminService) performCleanup(job *models.Job, req *models.CleanupRequest, runBy string) {
 	startTime := time.Now()
 
-	s.JobManager.UpdateJob(job.ID, func(j *models.Job) {
+	if err := s.JobManager.UpdateJob(job.ID, func(j *models.Job) {
 		j.Status = models.JobStatusRunning
 		j.StartedAt = startTime
 		j.Message = "Starting system cleanup..."
-	})
+	}); err != nil {
+		log.Printf("Error updating job status: %v", err)
+		return
+	}
 
 	cleanupResults := make(map[string]int64)
 	totalCleaned := int64(0)
 
 	// Clean old jobs
 	if req.OldJobs {
-		s.JobManager.UpdateJob(job.ID, func(j *models.Job) {
+		if err := s.JobManager.UpdateJob(job.ID, func(j *models.Job) {
 			j.Progress = 25
 			j.Message = "Cleaning old job records..."
-		})
+		}); err != nil {
+			log.Printf("Error updating job progress: %v", err)
+		}
 
 		// In a real implementation, clean jobs older than retention period
 		cleanupResults["old_jobs"] = 0 // Placeholder
@@ -542,10 +550,12 @@ func (s *AdminService) performCleanup(job *models.Job, req *models.CleanupReques
 
 	// Clean old webhook deliveries
 	if req.OldDeliveries {
-		s.JobManager.UpdateJob(job.ID, func(j *models.Job) {
+		if err := s.JobManager.UpdateJob(job.ID, func(j *models.Job) {
 			j.Progress = 50
 			j.Message = "Cleaning old webhook deliveries..."
-		})
+		}); err != nil {
+			log.Printf("Error updating job progress: %v", err)
+		}
 
 		if !req.DryRun {
 			result, err := s.DB.Exec(`
@@ -562,10 +572,12 @@ func (s *AdminService) performCleanup(job *models.Job, req *models.CleanupReques
 
 	// Clean orphaned files
 	if req.OldFiles {
-		s.JobManager.UpdateJob(job.ID, func(j *models.Job) {
+		if err := s.JobManager.UpdateJob(job.ID, func(j *models.Job) {
 			j.Progress = 75
 			j.Message = "Cleaning orphaned files..."
-		})
+		}); err != nil {
+			log.Printf("Error updating job progress: %v", err)
+		}
 
 		// In a real implementation, scan filesystem and remove orphaned files
 		cleanupResults["orphaned_files"] = 0 // Placeholder
@@ -573,13 +585,15 @@ func (s *AdminService) performCleanup(job *models.Job, req *models.CleanupReques
 
 	// Complete job
 	completedAt := time.Now()
-	s.JobManager.UpdateJob(job.ID, func(j *models.Job) {
+	if err := s.JobManager.UpdateJob(job.ID, func(j *models.Job) {
 		j.Status = models.JobStatusCompleted
 		j.Progress = 100
 		j.Message = fmt.Sprintf("Cleanup completed: %d items cleaned", totalCleaned)
 		j.Result = cleanupResults
 		j.CompletedAt = &completedAt
-	})
+	}); err != nil {
+		log.Printf("Error updating final job status: %v", err)
+	}
 
 	// Log audit trail
 	s.logAuditAction(0, runBy, "system_cleanup", "maintenance", job.ID,
@@ -624,11 +638,13 @@ func (s *AdminService) GetAdminStats() (*models.AdminStats, error) {
 }
 
 func (s *AdminService) logAuditAction(userID int, username, action, resource, resourceID, details, ipAddress, userAgent string, success bool) {
-	s.DB.Exec(`
+	if _, err := s.DB.Exec(`
 		INSERT INTO audit_logs (user_id, username, action, resource, resource_id, 
 		                       details, ip_address, user_agent, success, created_at)
 		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, datetime('now'))
-	`, userID, username, action, resource, resourceID, details, ipAddress, userAgent, success)
+	`, userID, username, action, resource, resourceID, details, ipAddress, userAgent, success); err != nil {
+		log.Printf("Error logging audit action: %v", err)
+	}
 }
 
 func (s *AdminService) GetAuditLogs(page, pageSize int, filters map[string]string) ([]models.AuditLog, int64, error) {

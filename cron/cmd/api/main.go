@@ -48,7 +48,20 @@ func main() {
 	// Load configuration
 	config := loadConfig()
 
-	log.Printf("Starting API server on port %s", config.Port)
+	// Gate emoji logs for non-production environments only
+	env := os.Getenv("APP_ENV")
+	if env == "" {
+		env = os.Getenv("GO_ENV")
+	}
+	if env == "" {
+		env = "production" // Default to production
+	}
+	
+	if env != "production" {
+		log.Printf("🔥 Hot reload test: API server starting on port %s - changes detected!", config.Port)
+	} else {
+		log.Printf("API server starting on port %s", config.Port)
+	}
 
 	// Initialize database
 	db, err := database.Initialize(config.DatabaseURL)
@@ -142,11 +155,20 @@ func setupRouter(config *Config, db *sql.DB) *gin.Engine {
 				var id int
 				var username, email, role string
 				var active bool
-				rows.Scan(&id, &username, &email, &role, &active)
+				if err := rows.Scan(&id, &username, &email, &role, &active); err != nil {
+					log.Printf("Error scanning row: %v", err)
+					continue
+				}
 				users = append(users, map[string]interface{}{
 					"id": id, "username": username, "email": email, "role": role, "active": active,
 				})
 			}
+			
+			// Check for errors from iterating over rows
+			if err := rows.Err(); err != nil {
+				log.Printf("Error iterating rows: %v", err)
+			}
+			
 			c.JSON(http.StatusOK, gin.H{"users": users})
 		})
 

@@ -4,6 +4,7 @@ import (
 	"crypto/sha256"
 	"database/sql"
 	"fmt"
+	"log"
 	"net/http"
 	"time"
 
@@ -111,6 +112,7 @@ func (h *AuthHandler) Login(c *gin.Context) {
 	_, err = h.DB.Exec("UPDATE users SET last_login = CURRENT_TIMESTAMP WHERE id = ?", user.ID)
 	if err != nil {
 		// Log error but don't fail the login
+		log.Printf("Warning: failed to update last login time for user %d: %v", user.ID, err)
 	}
 
 	c.JSON(http.StatusOK, LoginResponse{

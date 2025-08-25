@@ -207,11 +207,14 @@ func (dm *DownloadManager) startDownload(download *models.Download) {
 	defer dm.activeDownloads.Delete(download.ID)
 
 	// Update job status
-	dm.JobManager.UpdateJob(job.ID, func(j *models.Job) {
+	if err := dm.JobManager.UpdateJob(job.ID, func(j *models.Job) {
 		j.Status = models.JobStatusRunning
 		j.StartedAt = time.Now()
 		j.Message = fmt.Sprintf("Starting download: %s - %s", download.ArtistName, download.ShowTitle)
-	})
+	}); err != nil {
+		log.Printf("Error updating job status: %v", err)
+		return
+	}
 
 	// Update download status
 	dm.updateDownloadStatus(download.ID, models.DownloadStatusInProgress, "")
@@ -224,26 +227,32 @@ func (dm *DownloadManager) startDownload(download *models.Download) {
 		// Download failed
 		dm.updateDownloadStatus(download.ID, models.DownloadStatusFailed, err.Error())
 
-		dm.JobManager.UpdateJob(job.ID, func(j *models.Job) {
+		if updateErr := dm.JobManager.UpdateJob(job.ID, func(j *models.Job) {
 			j.Status = models.JobStatusFailed
 			j.Error = err.Error()
 			j.Message = "Download failed"
 			j.CompletedAt = &completedAt
-		})
+		}); updateErr != nil {
+			log.Printf("Error updating job status: %v", updateErr)
+		}
 	} else {
 		// Download succeeded
 		dm.updateDownloadStatus(download.ID, models.DownloadStatusCompleted, "")
 
-		dm.JobManager.UpdateJob(job.ID, func(j *models.Job) {
+		if updateErr := dm.JobManager.UpdateJob(job.ID, func(j *models.Job) {
 			j.Status = models.JobStatusCompleted
 			j.Progress = 100
 			j.Message = "Download completed successfully"
 			j.CompletedAt = &completedAt
-		})
+		}); updateErr != nil {
+			log.Printf("Error updating job status: %v", updateErr)
+		}
 	}
 
 	// Remove from queue by clearing queue position
-	dm.DB.Exec("UPDATE downloads SET queue_position = NULL WHERE id = ?", download.ID)
+	if _, err := dm.DB.Exec("UPDATE downloads SET queue_position = NULL WHERE id = ?", download.ID); err != nil {
+		log.Printf("Warning: failed to clear queue position: %v", err)
+	}
 
 	// Process next in queue
 	go dm.processQueue()
@@ -257,7 +266,7 @@ func (dm *DownloadManager) executeDownload(download *models.Download, job *model
 	case models.DownloadFormatFLAC:
 		formatNum = "2" // 16-bit / 44.1 kHz FLAC
 	case models.DownloadFormatALAC:
-		formatNum = "1" // 16-bit / 44.1 kHz ALAC  
+		formatNum = "1" // 16-bit / 44.1 kHz ALAC
 	case models.DownloadFormatMP3:
 		formatNum = "4" // 360 Reality Audio / best available
 	default:
@@ -275,7 +284,7 @@ func (dm *DownloadManager) executeDownload(download *models.Download, job *model
 	cmd.Dir = "/home/jmagar/code/nugs"
 
 	// Log the command being executed for debugging
-	log.Printf("Executing download command: %s (args: %v) in directory: %s", 
+	log.Printf("Executing download command: %s (args: %v) in directory: %s",
 		cmd.Path, cmd.Args, cmd.Dir)
 
 	// Start the command
@@ -298,16 +307,20 @@ func (dm *DownloadManager) executeDownload(download *models.Download, job *model
 	for {
 		select {
 		case <-job.Cancel:
-			cmd.Process.Kill()
+			if err := cmd.Process.Kill(); err != nil {
+				log.Printf("Warning: failed to kill download process: %v", err)
+			}
 			return fmt.Errorf("download cancelled")
 
 		case <-progressTicker.C:
 			if progress < 90 {
 				progress += 10
-				dm.JobManager.UpdateJob(job.ID, func(j *models.Job) {
+				if err := dm.JobManager.UpdateJob(job.ID, func(j *models.Job) {
 					j.Progress = progress
 					j.Message = fmt.Sprintf("Downloading... %d%%", progress)
-				})
+				}); err != nil {
+					log.Printf("Warning: failed to update job progress: %v", err)
+				}
 			}
 
 		case err := <-done:
@@ -325,11 +338,13 @@ func (dm *DownloadManager) executeDownload(download *models.Download, job *model
 
 			fileSize := dm.getFileSize(filePath)
 
-			dm.DB.Exec(`
+			if _, err := dm.DB.Exec(`
 				UPDATE downloads 
 				SET file_path = ?, file_size = ?, downloaded_at = datetime('now')
 				WHERE id = ?
-			`, filePath, fileSize, download.ID)
+			`, filePath, fileSize, download.ID); err != nil {
+				log.Printf("Warning: failed to update download file info: %v", err)
+			}
 
 			return nil
 		}
@@ -338,17 +353,21 @@ func (dm *DownloadManager) executeDownload(download *models.Download, job *model
 
 func (dm *DownloadManager) updateDownloadStatus(downloadID int, status models.DownloadStatus, errorMsg string) {
 	if errorMsg != "" {
-		dm.DB.Exec(`
+		if _, err := dm.DB.Exec(`
 			UPDATE downloads 
 			SET status = ?, error_message = ?
 			WHERE id = ?
-		`, status, errorMsg, downloadID)
+		`, status, errorMsg, downloadID); err != nil {
+			log.Printf("Warning: failed to update download status with error: %v", err)
+		}
 	} else {
-		dm.DB.Exec(`
+		if _, err := dm.DB.Exec(`
 			UPDATE downloads 
 			SET status = ?
 			WHERE id = ?
-		`, status, downloadID)
+		`, status, downloadID); err != nil {
+			log.Printf("Warning: failed to update download status: %v", err)
+		}
 	}
 }
 
@@ -452,7 +471,9 @@ func (dm *DownloadManager) CancelDownload(downloadID int) error {
 	}
 
 	// Remove from queue
-	dm.DB.Exec("DELETE FROM download_queue WHERE download_id = ?", downloadID)
+	if _, err := dm.DB.Exec("DELETE FROM download_queue WHERE download_id = ?", downloadID); err != nil {
+		log.Printf("Warning: failed to remove download from queue: %v", err)
+	}
 
 	return nil
 }

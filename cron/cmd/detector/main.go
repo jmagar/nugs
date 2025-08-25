@@ -3,8 +3,8 @@ package main
 import (
 	"encoding/json"
 	"fmt"
-	"io/ioutil"
 	"log"
+	"os"
 	"os/exec"
 	"regexp"
 	"sort"
@@ -108,19 +108,8 @@ func main() {
 	log.Println("Check shows.json for detailed results.")
 }
 
-func loadConfig(filename string) (*models.Config, error) {
-	data, err := ioutil.ReadFile(filename)
-	if err != nil {
-		return nil, err
-	}
-
-	var config models.Config
-	err = json.Unmarshal(data, &config)
-	return &config, err
-}
-
 func loadMonitorConfig(filename string) (*models.MonitorConfig, error) {
-	data, err := ioutil.ReadFile(filename)
+	data, err := os.ReadFile(filename)
 	if err != nil {
 		return nil, err
 	}
@@ -131,7 +120,7 @@ func loadMonitorConfig(filename string) (*models.MonitorConfig, error) {
 }
 
 func loadShowsData() *models.ShowsData {
-	data, err := ioutil.ReadFile("data/shows.json")
+	data, err := os.ReadFile("data/shows.json")
 	if err != nil {
 		return &models.ShowsData{
 			Artists: make(map[string]models.ArtistShowData),
@@ -139,7 +128,9 @@ func loadShowsData() *models.ShowsData {
 	}
 
 	var shows models.ShowsData
-	json.Unmarshal(data, &shows)
+	if err := json.Unmarshal(data, &shows); err != nil {
+		fmt.Printf("Warning: failed to unmarshal shows data: %v\n", err)
+	}
 	if shows.Artists == nil {
 		shows.Artists = make(map[string]models.ArtistShowData)
 	}
@@ -160,7 +151,7 @@ func saveShowsData(shows *models.ShowsData) error {
 	if err != nil {
 		return err
 	}
-	return ioutil.WriteFile("data/shows.json", data, 0644)
+	return os.WriteFile("data/shows.json", data, 0644)
 }
 
 func getDownloadedShows(artistFolder, artistName string) ([]int, error) {
