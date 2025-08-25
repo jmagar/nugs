@@ -76,4 +76,4 @@ cron/tmp/
 
 # Documentation and tracking files
 API_TEST_TRACKER.md
-*-fixes.md
+docs/*-fixes.md

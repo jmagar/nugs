@@ -165,8 +165,8 @@ func main() {
 	}
 
 	log.Printf("Generated reports for %d artists", len(reports))
-	log.Printf("Summary: %d shows have, %d shows available, %.1f%% completion",
-		summary.TotalShowsHave, summary.TotalShowsAvail, summary.OverallCompletion)
+	log.Printf("Summary: %d shows have, %d shows available, %d missing, %.1f%% completion",
+		summary.TotalShowsHave, summary.TotalShowsAvail, summary.TotalMissing, summary.OverallCompletion)
 
 	// Sort reports
 	log.Printf("Sorting reports by %s...", *sortBy)
@@ -302,6 +302,11 @@ func loadShowsData() (*models.ShowsData, error) {
 
 	if shows.Artists == nil {
 		shows.Artists = make(map[string]models.ArtistShowData)
+	}
+
+	// Warning log when loaded ShowsData has an empty Artists map
+	if len(shows.Artists) == 0 {
+		log.Printf("Warning: data/shows.json contains no artists - may need to refresh catalog data")
 	}
 
 	return &shows, nil

@@ -93,7 +93,15 @@ func (h *AnalyticsHandler) GetArtistAnalytics(c *gin.Context) {
 		Limit:      limit,
 	}
 
-	// Note: artist_ids filter not implemented yet - could parse comma-separated IDs
+	if ids := c.Query("artist_ids"); ids != "" {
+		var artistIDs []int
+		for _, s := range strings.Split(ids, ",") {
+			if id, err := strconv.Atoi(strings.TrimSpace(s)); err == nil {
+				artistIDs = append(artistIDs, id)
+			}
+		}
+		query.ArtistIDs = artistIDs
+	}
 
 	analytics, err := h.AnalyticsService.GetArtistAnalytics(query)
 	if err != nil {

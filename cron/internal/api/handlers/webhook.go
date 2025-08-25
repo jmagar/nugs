@@ -92,13 +92,13 @@ func (h *WebhookHandler) GetWebhooks(c *gin.Context) {
 	offset := (page - 1) * pageSize
 	query := `
 		SELECT w.id, w.description, w.url, w.events, w.status, w.secret, 
-		       w.timeout, w.retry_count, w.last_delivery, w.total_deliveries, w.failed_deliveries,
+		       w.timeout, w.retry_count, w.last_delivery,
 		       w.created_at, w.updated_at,
 		       COUNT(wd.id) as total_fired,
 		       COUNT(CASE WHEN wd.success = 1 THEN 1 END) as success_count
 		FROM webhooks w
 		LEFT JOIN webhook_deliveries wd ON w.id = wd.webhook_id ` + whereClause + `
-		GROUP BY w.id, w.description, w.url, w.events, w.status, w.secret, w.timeout, w.retry_count, w.last_delivery, w.total_deliveries, w.failed_deliveries, w.created_at, w.updated_at
+		GROUP BY w.id, w.description, w.url, w.events, w.status, w.secret, w.timeout, w.retry_count, w.last_delivery, w.created_at, w.updated_at
 		ORDER BY w.created_at DESC
 		LIMIT ? OFFSET ?
 	`
@@ -119,11 +119,10 @@ func (h *WebhookHandler) GetWebhooks(c *gin.Context) {
 		var lastFired sql.NullString
 		var secret sql.NullString
 
-		var totalDeliveries, failedDeliveries int // temporary variables for unused DB columns
 		err := rows.Scan(
 			&webhook.ID, &webhook.Name, &webhook.URL, &eventsJSON, &webhook.Status,
 			&secret, &webhook.Timeout, &webhook.Retries,
-			&lastFired, &totalDeliveries, &failedDeliveries,
+			&lastFired,
 			&webhook.CreatedAt, &webhook.UpdatedAt, &webhook.TotalFired, &webhook.SuccessCount,
 		)
 
@@ -182,14 +181,14 @@ func (h *WebhookHandler) GetWebhook(c *gin.Context) {
 
 	query := `
 		SELECT w.id, w.description, w.url, w.events, w.status, w.secret, 
-		       w.timeout, w.retry_count, w.last_delivery, w.total_deliveries, w.failed_deliveries,
+		       w.timeout, w.retry_count, w.last_delivery,
 		       w.created_at, w.updated_at,
 		       COUNT(wd.id) as total_fired,
 		       COUNT(CASE WHEN wd.success = 1 THEN 1 END) as success_count
 		FROM webhooks w
 		LEFT JOIN webhook_deliveries wd ON w.id = wd.webhook_id
 		WHERE w.id = ?
-		GROUP BY w.id, w.description, w.url, w.events, w.status, w.secret, w.timeout, w.retry_count, w.last_delivery, w.total_deliveries, w.failed_deliveries, w.created_at, w.updated_at
+		GROUP BY w.id, w.description, w.url, w.events, w.status, w.secret, w.timeout, w.retry_count, w.last_delivery, w.created_at, w.updated_at
 	`
 
 	var webhook models.Webhook
@@ -197,11 +196,10 @@ func (h *WebhookHandler) GetWebhook(c *gin.Context) {
 	var lastFired sql.NullString
 	var secret sql.NullString
 
-	var totalDeliveries, failedDeliveries int // temporary variables for unused DB columns
 	err = h.DB.QueryRow(query, webhookID).Scan(
 		&webhook.ID, &webhook.Name, &webhook.URL, &eventsJSON, &webhook.Status,
 		&secret, &webhook.Timeout, &webhook.Retries,
-		&lastFired, &totalDeliveries, &failedDeliveries,
+		&lastFired,
 		&webhook.CreatedAt, &webhook.UpdatedAt, &webhook.TotalFired, &webhook.SuccessCount,
 	)
 

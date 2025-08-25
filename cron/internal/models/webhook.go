@@ -75,14 +75,15 @@ type WebhookRequest struct {
 }
 
 type WebhookUpdateRequest struct {
-	Name    *string            `json:"name,omitempty"`
-	URL     *string            `json:"url,omitempty"`
-	Events  *[]WebhookEvent    `json:"events,omitempty"`
-	Status  *WebhookStatus     `json:"status,omitempty"`
-	Secret  *string            `json:"secret,omitempty"`
-	Headers *map[string]string `json:"headers,omitempty"`
-	Timeout *int               `json:"timeout,omitempty"`
-	Retries *int               `json:"retries,omitempty"`
+	Name        *string            `json:"name,omitempty"`
+	Description *string            `json:"description,omitempty"`
+	URL         *string            `json:"url,omitempty"`
+	Events      *[]WebhookEvent    `json:"events,omitempty"`
+	Status      *WebhookStatus     `json:"status,omitempty"`
+	Secret      *string            `json:"secret,omitempty"`
+	Headers     *map[string]string `json:"headers,omitempty"`
+	Timeout     *int               `json:"timeout,omitempty"`
+	Retries     *int               `json:"retries,omitempty"`
 }
 
 type WebhookResponse struct {

@@ -179,8 +179,56 @@ func saveShowsData(shows *models.ShowsData) {
 		fmt.Printf("Warning: failed to marshal shows data: %v\n", err)
 		return
 	}
-	if err := os.WriteFile("data/shows.json", data, 0644); err != nil {
-		fmt.Printf("Warning: failed to write shows data: %v\n", err)
+
+	// Ensure the data directory exists
+	if err := os.MkdirAll("data", 0755); err != nil {
+		fmt.Printf("Warning: failed to create data directory: %v\n", err)
+		return
+	}
+
+	// Create a temporary file in the data directory
+	tempFile, err := os.CreateTemp("data", "shows.json.tmp.*")
+	if err != nil {
+		fmt.Printf("Warning: failed to create temp file: %v\n", err)
+		return
+	}
+	tempPath := tempFile.Name()
+
+	// Write data to temp file
+	if _, err := tempFile.Write(data); err != nil {
+		tempFile.Close()
+		os.Remove(tempPath)
+		fmt.Printf("Warning: failed to write to temp file: %v\n", err)
+		return
+	}
+
+	// Flush data to disk
+	if err := tempFile.Sync(); err != nil {
+		tempFile.Close()
+		os.Remove(tempPath)
+		fmt.Printf("Warning: failed to sync temp file: %v\n", err)
+		return
+	}
+
+	// Close temp file
+	if err := tempFile.Close(); err != nil {
+		os.Remove(tempPath)
+		fmt.Printf("Warning: failed to close temp file: %v\n", err)
+		return
+	}
+
+	// Set correct permissions
+	if err := os.Chmod(tempPath, 0644); err != nil {
+		os.Remove(tempPath)
+		fmt.Printf("Warning: failed to set permissions on temp file: %v\n", err)
+		return
+	}
+
+	// Atomically replace the target file
+	if err := os.Rename(tempPath, "data/shows.json"); err != nil {
+		os.Remove(tempPath)
+		fmt.Printf("Warning: failed to rename temp file to final location: %v\n", err)
+		return
 	}
 }
 

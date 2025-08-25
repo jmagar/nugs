@@ -102,7 +102,7 @@ test-legacy:
 
 # Clean binaries
 clean:
-	rm -f bin/catalog_manager bin/monitor_artists bin/missing_shows_detector bin/api_monitor bin/gap_report bin/nugs-api
+	rm -rf bin/
 	rm -f coverage.out coverage.html
 	rm -rf tmp/
 

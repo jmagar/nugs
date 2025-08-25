@@ -677,8 +677,21 @@ func (s *SchedulerService) loadSchedules() error {
 			continue
 		}
 
-		// Set a default type since column doesn't exist in current DB
-		schedule.Type = "manual"
+		// Derive type from parameters (if present) when column is absent
+		hasTypeColumn := s.hasScheduleColumn("schedules", "type")
+		if !hasTypeColumn {
+			if parameters.Valid && parameters.String != "" {
+				var p map[string]interface{}
+				if err := json.Unmarshal([]byte(parameters.String), &p); err == nil {
+					if t, ok := p["type"].(string); ok && t != "" {
+						schedule.Type = t
+					}
+				}
+			}
+			if schedule.Type == "" {
+				schedule.Type = "manual"
+			}
+		}
 
 		if nextRun.Valid {
 			if t, err := time.Parse("2006-01-02 15:04:05", nextRun.String); err == nil {
@@ -833,4 +846,17 @@ func getBool(params map[string]interface{}, key string, defaultValue bool) bool 
 		return val
 	}
 	return defaultValue
+}
+
+// hasScheduleColumn checks for the existence of a column on a table (SQLite)
+func (s *SchedulerService) hasScheduleColumn(table, column string) bool {
+	var count int
+	query := fmt.Sprintf("SELECT COUNT(*) FROM pragma_table_info('%s') WHERE name = '%s'", table, column)
+	
+	err := s.DB.QueryRow(query).Scan(&count)
+	if err != nil {
+		return false
+	}
+	
+	return count > 0
 }

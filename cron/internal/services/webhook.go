@@ -53,7 +53,13 @@ func (s *WebhookService) CreateWebhook(req *models.WebhookRequest) (*models.Webh
 	}
 
 	// Serialize events
-	eventsJSON, _ := json.Marshal(req.Events)
+	eventsJSON, err := json.Marshal(req.Events)
+	if err != nil {
+		return &models.WebhookResponse{
+			Success: false,
+			Error:   fmt.Sprintf("failed to marshal events: %v", err),
+		}, fmt.Errorf("failed to marshal events: %w", err)
+	}
 
 	// Insert webhook
 	result, err := s.DB.Exec(`
@@ -82,7 +88,11 @@ func (s *WebhookService) UpdateWebhook(webhookID int, req *models.WebhookUpdateR
 	updates := []string{}
 	args := []interface{}{}
 
-	if req.Name != nil {
+	// Prefer Description over Name for backward compatibility
+	if req.Description != nil {
+		updates = append(updates, "description = ?")
+		args = append(args, *req.Description)
+	} else if req.Name != nil {
 		updates = append(updates, "description = ?")
 		args = append(args, *req.Name)
 	}
@@ -99,7 +109,10 @@ func (s *WebhookService) UpdateWebhook(webhookID int, req *models.WebhookUpdateR
 				return fmt.Errorf("invalid event type: %s", event)
 			}
 		}
-		eventsJSON, _ := json.Marshal(*req.Events)
+		eventsJSON, err := json.Marshal(*req.Events)
+		if err != nil {
+			return fmt.Errorf("failed to marshal events: %w", err)
+		}
 		updates = append(updates, "events = ?")
 		args = append(args, string(eventsJSON))
 	}
