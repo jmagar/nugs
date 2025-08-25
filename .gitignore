@@ -46,6 +46,10 @@ Thumbs.db
 /build/
 /dist/
 /bin/
+cron/bin/
+cron/data/*.db*
+cron/data/*_catalog.json
+cron/configs/shows_backup.json
 
 # Reference code directory
 REFERENCE_CODE/
