@@ -360,16 +360,16 @@ func (s *MonitoringService) GetMonitorStats() (*models.MonitorStats, error) {
 	s.DB.QueryRow(`
 		SELECT COUNT(*) 
 		FROM monitor_alerts 
-		WHERE acknowledged = 0
+		WHERE status != 'acknowledged'
 	`).Scan(&stats.UnacknowledgedAlerts)
 
 	// Get last check time
 	var lastCheckStr sql.NullString
 	s.DB.QueryRow(`
-		SELECT last_checked 
+		SELECT last_check 
 		FROM artist_monitors 
-		WHERE last_checked IS NOT NULL 
-		ORDER BY last_checked DESC 
+		WHERE last_check IS NOT NULL 
+		ORDER BY last_check DESC 
 		LIMIT 1
 	`).Scan(&lastCheckStr)
 

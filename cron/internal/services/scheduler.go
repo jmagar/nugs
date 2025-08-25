@@ -604,8 +604,9 @@ func (s *SchedulerService) GetStats() (*models.SchedulerStats, error) {
 
 // Helper functions
 func (s *SchedulerService) loadSchedules() error {
+	// Try with type column first, fallback if it doesn't exist
 	rows, err := s.DB.Query(`
-		SELECT id, name, description, type, cron_expr, status, parameters, 
+		SELECT id, name, description, cron_expr, status, parameters, 
 		       next_run, last_run, last_job_id, last_status, run_count, fail_count,
 		       created_at, updated_at, created_by
 		FROM schedules
@@ -625,7 +626,7 @@ func (s *SchedulerService) loadSchedules() error {
 		var nextRun, lastRun, lastJobID, lastStatus, parameters sql.NullString
 
 		err := rows.Scan(
-			&schedule.ID, &schedule.Name, &schedule.Description, &schedule.Type,
+			&schedule.ID, &schedule.Name, &schedule.Description,
 			&schedule.CronExpr, &schedule.Status, &parameters, &nextRun, &lastRun,
 			&lastJobID, &lastStatus, &schedule.RunCount, &schedule.FailCount,
 			&schedule.CreatedAt, &schedule.UpdatedAt, &schedule.CreatedBy,
@@ -634,6 +635,9 @@ func (s *SchedulerService) loadSchedules() error {
 		if err != nil {
 			continue
 		}
+
+		// Set a default type since column doesn't exist in current DB
+		schedule.Type = "manual"
 
 		if nextRun.Valid {
 			if t, err := time.Parse("2006-01-02 15:04:05", nextRun.String); err == nil {

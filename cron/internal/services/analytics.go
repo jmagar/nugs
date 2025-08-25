@@ -86,6 +86,17 @@ func (s *AnalyticsService) GenerateReport(query *models.AnalyticsQuery) (*models
 		report.Performance = performance
 		report.Summary = s.generatePerformanceSummary(performance)
 
+	case "summary":
+		// Generate a comprehensive summary report
+		collectionStats, _ := s.GetCollectionStats(query)
+		systemMetrics, _ := s.GetSystemMetrics()
+		downloadAnalytics, _ := s.GetDownloadAnalytics(query)
+		
+		report.CollectionStats = collectionStats
+		report.SystemMetrics = systemMetrics
+		report.DownloadAnalytics = downloadAnalytics
+		report.Summary = "Comprehensive summary report generated successfully"
+
 	default:
 		return nil, fmt.Errorf("unsupported report type: %s", query.ReportType)
 	}

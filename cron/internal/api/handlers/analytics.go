@@ -196,7 +196,7 @@ func (h *AnalyticsHandler) GetTopArtists(c *gin.Context) {
 		LEFT JOIN shows s ON a.id = s.artist_id
 		LEFT JOIN downloads d ON s.id = d.show_id
 		GROUP BY a.id, a.name
-		HAVING total_downloads > 0
+		HAVING COUNT(DISTINCT d.id) > 0
 		ORDER BY ` + orderClause + `
 		LIMIT ?
 	`
@@ -259,13 +259,13 @@ func (h *AnalyticsHandler) GetTopVenues(c *gin.Context) {
 	limit, _ := strconv.Atoi(c.DefaultQuery("limit", "10"))
 
 	query := `
-		SELECT s.venue_name, s.venue_city, s.venue_state,
+		SELECT s.venue, s.city, s.state,
 		       COUNT(DISTINCT s.id) as show_count,
 		       COUNT(d.id) as download_count
 		FROM shows s
 		JOIN downloads d ON s.id = d.show_id
-		WHERE s.venue_name IS NOT NULL AND s.venue_name != ''
-		GROUP BY s.venue_name, s.venue_city, s.venue_state
+		WHERE s.venue IS NOT NULL AND s.venue != ''
+		GROUP BY s.venue, s.city, s.state
 		ORDER BY download_count DESC
 		LIMIT ?
 	`

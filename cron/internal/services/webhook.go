@@ -61,10 +61,10 @@ func (s *WebhookService) CreateWebhook(req *models.WebhookRequest) (*models.Webh
 
 	// Insert webhook
 	result, err := s.DB.Exec(`
-		INSERT INTO webhooks (name, url, events, status, secret, headers, timeout, retries, 
-		                     failure_count, created_at, updated_at)
-		VALUES (?, ?, ?, 'active', ?, ?, ?, ?, 0, datetime('now'), datetime('now'))
-	`, req.Name, req.URL, string(eventsJSON), req.Secret, headersJSON, req.Timeout, req.Retries)
+		INSERT INTO webhooks (description, url, events, status, secret, timeout, retry_count, 
+		                     total_deliveries, successful_deliveries, failed_deliveries, created_at, updated_at)
+		VALUES (?, ?, ?, 'active', ?, ?, ?, 0, 0, 0, datetime('now'), datetime('now'))
+	`, req.Name, req.URL, string(eventsJSON), req.Secret, req.Timeout, req.Retries)
 
 	if err != nil {
 		return &models.WebhookResponse{
@@ -87,7 +87,7 @@ func (s *WebhookService) UpdateWebhook(webhookID int, req *models.WebhookUpdateR
 	args := []interface{}{}
 
 	if req.Name != nil {
-		updates = append(updates, "name = ?")
+		updates = append(updates, "description = ?")
 		args = append(args, *req.Name)
 	}
 
@@ -118,11 +118,12 @@ func (s *WebhookService) UpdateWebhook(webhookID int, req *models.WebhookUpdateR
 		args = append(args, *req.Secret)
 	}
 
-	if req.Headers != nil {
-		headersJSON, _ := json.Marshal(*req.Headers)
-		updates = append(updates, "headers = ?")
-		args = append(args, string(headersJSON))
-	}
+	// Skip headers update as this column doesn't exist in the current schema
+	// if req.Headers != nil {
+	//	headersJSON, _ := json.Marshal(*req.Headers)
+	//	updates = append(updates, "headers = ?")
+	//	args = append(args, string(headersJSON))
+	// }
 
 	if req.Timeout != nil {
 		updates = append(updates, "timeout = ?")
@@ -130,7 +131,7 @@ func (s *WebhookService) UpdateWebhook(webhookID int, req *models.WebhookUpdateR
 	}
 
 	if req.Retries != nil {
-		updates = append(updates, "retries = ?")
+		updates = append(updates, "retry_count = ?")
 		args = append(args, *req.Retries)
 	}
 
@@ -176,7 +177,7 @@ func (s *WebhookService) DeleteWebhook(webhookID int) error {
 func (s *WebhookService) TriggerEvent(event models.WebhookEvent, data interface{}) error {
 	// Get all webhooks that listen for this event
 	rows, err := s.DB.Query(`
-		SELECT id, name, url, events, secret, headers, timeout, retries
+		SELECT id, description, url, events, secret, timeout, retry_count
 		FROM webhooks
 		WHERE status = 'active' AND events LIKE ?
 	`, "%\""+string(event)+"\"%")
@@ -188,10 +189,10 @@ func (s *WebhookService) TriggerEvent(event models.WebhookEvent, data interface{
 
 	for rows.Next() {
 		var webhook models.Webhook
-		var eventsJSON, headersJSON string
+		var eventsJSON string
 
-		err := rows.Scan(&webhook.ID, &webhook.Name, &webhook.URL, &eventsJSON,
-			&webhook.Secret, &headersJSON, &webhook.Timeout, &webhook.Retries)
+		err := rows.Scan(&webhook.ID, &webhook.Description, &webhook.URL, &eventsJSON,
+			&webhook.Secret, &webhook.Timeout, &webhook.RetryCount)
 		if err != nil {
 			continue
 		}

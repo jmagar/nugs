@@ -91,14 +91,14 @@ func (h *WebhookHandler) GetWebhooks(c *gin.Context) {
 	// Get webhooks
 	offset := (page - 1) * pageSize
 	query := `
-		SELECT w.id, w.name, w.url, w.events, w.status, w.secret, w.headers, 
-		       w.timeout, w.retries, w.last_fired, w.last_status, w.failure_count,
+		SELECT w.id, w.description, w.url, w.events, w.status, w.secret, 
+		       w.timeout, w.retry_count, w.last_delivery, w.total_deliveries, w.failed_deliveries,
 		       w.created_at, w.updated_at,
 		       COUNT(wd.id) as total_fired,
 		       COUNT(CASE WHEN wd.success = 1 THEN 1 END) as success_count
 		FROM webhooks w
 		LEFT JOIN webhook_deliveries wd ON w.id = wd.webhook_id ` + whereClause + `
-		GROUP BY w.id
+		GROUP BY w.id, w.description, w.url, w.events, w.status, w.secret, w.timeout, w.retry_count, w.last_delivery, w.total_deliveries, w.failed_deliveries, w.created_at, w.updated_at
 		ORDER BY w.created_at DESC
 		LIMIT ? OFFSET ?
 	`
@@ -115,14 +115,14 @@ func (h *WebhookHandler) GetWebhooks(c *gin.Context) {
 	var webhooks []models.Webhook
 	for rows.Next() {
 		var webhook models.Webhook
-		var eventsJSON, headersJSON string
+		var eventsJSON string
 		var lastFired sql.NullString
 		var secret sql.NullString
 
 		err := rows.Scan(
-			&webhook.ID, &webhook.Name, &webhook.URL, &eventsJSON, &webhook.Status,
-			&secret, &headersJSON, &webhook.Timeout, &webhook.Retries,
-			&lastFired, &webhook.LastStatus, &webhook.FailureCount,
+			&webhook.ID, &webhook.Description, &webhook.URL, &eventsJSON, &webhook.Status,
+			&secret, &webhook.Timeout, &webhook.RetryCount,
+			&lastFired, &webhook.TotalDeliveries, &webhook.FailedDeliveries,
 			&webhook.CreatedAt, &webhook.UpdatedAt, &webhook.TotalFired, &webhook.SuccessCount,
 		)
 
@@ -180,26 +180,26 @@ func (h *WebhookHandler) GetWebhook(c *gin.Context) {
 	}
 
 	query := `
-		SELECT w.id, w.name, w.url, w.events, w.status, w.secret, w.headers, 
-		       w.timeout, w.retries, w.last_fired, w.last_status, w.failure_count,
+		SELECT w.id, w.description, w.url, w.events, w.status, w.secret, 
+		       w.timeout, w.retry_count, w.last_delivery, w.total_deliveries, w.failed_deliveries,
 		       w.created_at, w.updated_at,
 		       COUNT(wd.id) as total_fired,
 		       COUNT(CASE WHEN wd.success = 1 THEN 1 END) as success_count
 		FROM webhooks w
 		LEFT JOIN webhook_deliveries wd ON w.id = wd.webhook_id
 		WHERE w.id = ?
-		GROUP BY w.id
+		GROUP BY w.id, w.description, w.url, w.events, w.status, w.secret, w.timeout, w.retry_count, w.last_delivery, w.total_deliveries, w.failed_deliveries, w.created_at, w.updated_at
 	`
 
 	var webhook models.Webhook
-	var eventsJSON, headersJSON string
+	var eventsJSON string
 	var lastFired sql.NullString
 	var secret sql.NullString
 
 	err = h.DB.QueryRow(query, webhookID).Scan(
-		&webhook.ID, &webhook.Name, &webhook.URL, &eventsJSON, &webhook.Status,
-		&secret, &headersJSON, &webhook.Timeout, &webhook.Retries,
-		&lastFired, &webhook.LastStatus, &webhook.FailureCount,
+		&webhook.ID, &webhook.Description, &webhook.URL, &eventsJSON, &webhook.Status,
+		&secret, &webhook.Timeout, &webhook.RetryCount,
+		&lastFired, &webhook.TotalDeliveries, &webhook.FailedDeliveries,
 		&webhook.CreatedAt, &webhook.UpdatedAt, &webhook.TotalFired, &webhook.SuccessCount,
 	)
 
@@ -376,7 +376,7 @@ func (h *WebhookHandler) GetWebhookDeliveries(c *gin.Context) {
 	query := `
 		SELECT wd.id, wd.webhook_id, wd.event, wd.url, wd.payload, wd.headers,
 		       wd.status_code, wd.response, wd.error, wd.duration_ms, wd.attempt, 
-		       wd.success, wd.created_at, w.name as webhook_name
+		       wd.success, wd.created_at, w.description as webhook_name
 		FROM webhook_deliveries wd
 		JOIN webhooks w ON wd.webhook_id = w.id ` + whereClause + `
 		ORDER BY wd.created_at DESC
@@ -488,7 +488,7 @@ func (h *WebhookHandler) GetAllDeliveries(c *gin.Context) {
 	query := `
 		SELECT wd.id, wd.webhook_id, wd.event, wd.url, wd.status_code, 
 		       wd.duration_ms, wd.attempt, wd.success, wd.created_at, 
-		       w.name as webhook_name
+		       w.description as webhook_name
 		FROM webhook_deliveries wd
 		JOIN webhooks w ON wd.webhook_id = w.id ` + whereClause + `
 		ORDER BY wd.created_at DESC
