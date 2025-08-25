@@ -51,13 +51,8 @@ func (s *WebhookService) CreateWebhook(req *models.WebhookRequest) (*models.Webh
 		}
 	}
 
-	// Serialize events and headers
+	// Serialize events
 	eventsJSON, _ := json.Marshal(req.Events)
-	headersJSON := "{}"
-	if req.Headers != nil {
-		headersData, _ := json.Marshal(req.Headers)
-		headersJSON = string(headersData)
-	}
 
 	// Insert webhook
 	result, err := s.DB.Exec(`
@@ -177,7 +172,7 @@ func (s *WebhookService) DeleteWebhook(webhookID int) error {
 func (s *WebhookService) TriggerEvent(event models.WebhookEvent, data interface{}) error {
 	// Get all webhooks that listen for this event
 	rows, err := s.DB.Query(`
-		SELECT id, description, url, events, secret, timeout, retry_count
+		SELECT id, name, url, events, secret, timeout, retries, headers
 		FROM webhooks
 		WHERE status = 'active' AND events LIKE ?
 	`, "%\""+string(event)+"\"%")
@@ -191,8 +186,8 @@ func (s *WebhookService) TriggerEvent(event models.WebhookEvent, data interface{
 		var webhook models.Webhook
 		var eventsJSON string
 
-		err := rows.Scan(&webhook.ID, &webhook.Description, &webhook.URL, &eventsJSON,
-			&webhook.Secret, &webhook.Timeout, &webhook.RetryCount)
+		err := rows.Scan(&webhook.ID, &webhook.Name, &webhook.URL, &eventsJSON,
+			&webhook.Secret, &webhook.Timeout, &webhook.Retries, &webhook.Headers)
 		if err != nil {
 			continue
 		}
@@ -209,11 +204,6 @@ func (s *WebhookService) TriggerEvent(event models.WebhookEvent, data interface{
 			}
 
 			if shouldTrigger {
-				// Parse headers
-				var headers map[string]string
-				json.Unmarshal([]byte(headersJSON), &headers)
-				webhook.Headers = headersJSON
-
 				// Trigger webhook asynchronously
 				go s.deliverWebhook(&webhook, event, data, 1)
 			}

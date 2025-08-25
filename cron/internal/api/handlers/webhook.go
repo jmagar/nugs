@@ -119,10 +119,11 @@ func (h *WebhookHandler) GetWebhooks(c *gin.Context) {
 		var lastFired sql.NullString
 		var secret sql.NullString
 
+		var totalDeliveries, failedDeliveries int // temporary variables for unused DB columns
 		err := rows.Scan(
-			&webhook.ID, &webhook.Description, &webhook.URL, &eventsJSON, &webhook.Status,
-			&secret, &webhook.Timeout, &webhook.RetryCount,
-			&lastFired, &webhook.TotalDeliveries, &webhook.FailedDeliveries,
+			&webhook.ID, &webhook.Name, &webhook.URL, &eventsJSON, &webhook.Status,
+			&secret, &webhook.Timeout, &webhook.Retries,
+			&lastFired, &totalDeliveries, &failedDeliveries,
 			&webhook.CreatedAt, &webhook.UpdatedAt, &webhook.TotalFired, &webhook.SuccessCount,
 		)
 
@@ -196,10 +197,11 @@ func (h *WebhookHandler) GetWebhook(c *gin.Context) {
 	var lastFired sql.NullString
 	var secret sql.NullString
 
+	var totalDeliveries, failedDeliveries int // temporary variables for unused DB columns
 	err = h.DB.QueryRow(query, webhookID).Scan(
-		&webhook.ID, &webhook.Description, &webhook.URL, &eventsJSON, &webhook.Status,
-		&secret, &webhook.Timeout, &webhook.RetryCount,
-		&lastFired, &webhook.TotalDeliveries, &webhook.FailedDeliveries,
+		&webhook.ID, &webhook.Name, &webhook.URL, &eventsJSON, &webhook.Status,
+		&secret, &webhook.Timeout, &webhook.Retries,
+		&lastFired, &totalDeliveries, &failedDeliveries,
 		&webhook.CreatedAt, &webhook.UpdatedAt, &webhook.TotalFired, &webhook.SuccessCount,
 	)
 

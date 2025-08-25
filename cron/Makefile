@@ -1,4 +1,4 @@
-.PHONY: all clean catalog monitor detector apimon api build test test-unit test-integration test-coverage lint fmt vet sec quality
+.PHONY: all clean catalog monitor detector apimon api build test test-unit test-integration test-coverage lint fmt vet sec quality dev install-air
 
 # Build all binaries
 all: catalog monitor detector apimon api gap_report
@@ -22,6 +22,23 @@ gap_report:
 # Build API server
 api:
 	go build -o bin/nugs-api ./cmd/api
+
+# Install Air for hot reload development
+install-air:
+	@echo "Installing Air for hot reload..."
+	@if ! command -v air >/dev/null 2>&1; then \
+		go install github.com/air-verse/air@latest; \
+	else \
+		echo "Air is already installed"; \
+	fi
+
+# Run API server with hot reload (development mode)
+dev: install-air
+	@echo "Starting API server with hot reload..."
+	@echo "Visit: http://localhost:8080"
+	@echo "Swagger: http://localhost:8080/swagger/index.html"
+	@echo "Press Ctrl+C to stop"
+	air
 
 # Build everything (same as all)
 build: all
@@ -87,6 +104,7 @@ test-legacy:
 clean:
 	rm -f bin/catalog_manager bin/monitor_artists bin/missing_shows_detector bin/api_monitor bin/gap_report bin/nugs-api
 	rm -f coverage.out coverage.html
+	rm -rf tmp/
 
 # Install dependencies
 deps:
@@ -103,6 +121,8 @@ help:
 	@echo "  apimon            - Build api_monitor"
 	@echo "  api               - Build API server"
 	@echo "  gap_report        - Build gap_report"
+	@echo "  dev               - Start API server with hot reload (development)"
+	@echo "  install-air       - Install Air hot reload tool"
 	@echo "  test              - Run all tests (unit + integration)"
 	@echo "  test-unit         - Run unit tests only"
 	@echo "  test-integration  - Run integration tests only"
