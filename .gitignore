@@ -49,7 +49,11 @@ Thumbs.db
 cron/bin/
 cron/data/*.db*
 cron/data/*_catalog.json
+cron/data/catalog_cache.json
 cron/configs/shows_backup.json
+
+# nugs-dl binary
+nugs-dl
 
 # Reference code directory
 REFERENCE_CODE/
