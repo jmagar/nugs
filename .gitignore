@@ -68,3 +68,8 @@ token.md
 
 # Downloaded music files
 downloads/
+
+# Air hot reload temporary files
+tmp/
+cron/tmp/
+.air.toml.tmp

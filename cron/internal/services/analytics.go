@@ -3,6 +3,7 @@ package services
 import (
 	"database/sql"
 	"fmt"
+	"log"
 	"os"
 	"strings"
 	"syscall"
@@ -88,9 +89,18 @@ func (s *AnalyticsService) GenerateReport(query *models.AnalyticsQuery) (*models
 
 	case "summary":
 		// Generate a comprehensive summary report
-		collectionStats, _ := s.GetCollectionStats(query)
-		systemMetrics, _ := s.GetSystemMetrics()
-		downloadAnalytics, _ := s.GetDownloadAnalytics(query)
+		collectionStats, err := s.GetCollectionStats(query)
+		if err != nil {
+			log.Printf("Error getting collection stats for summary report: %v", err)
+		}
+		systemMetrics, err := s.GetSystemMetrics()
+		if err != nil {
+			log.Printf("Error getting system metrics for summary report: %v", err)
+		}
+		downloadAnalytics, err := s.GetDownloadAnalytics(query)
+		if err != nil {
+			log.Printf("Error getting download analytics for summary report: %v", err)
+		}
 		
 		report.CollectionStats = collectionStats
 		report.SystemMetrics = systemMetrics

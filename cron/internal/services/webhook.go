@@ -113,12 +113,10 @@ func (s *WebhookService) UpdateWebhook(webhookID int, req *models.WebhookUpdateR
 		args = append(args, *req.Secret)
 	}
 
-	// Skip headers update as this column doesn't exist in the current schema
-	// if req.Headers != nil {
-	//	headersJSON, _ := json.Marshal(*req.Headers)
-	//	updates = append(updates, "headers = ?")
-	//	args = append(args, string(headersJSON))
-	// }
+	// Error if headers update is attempted, as this column doesn't exist in the current schema
+	if req.Headers != nil {
+		return fmt.Errorf("updating headers is not supported")
+	}
 
 	if req.Timeout != nil {
 		updates = append(updates, "timeout = ?")

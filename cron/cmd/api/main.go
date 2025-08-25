@@ -48,7 +48,7 @@ func main() {
 	// Load configuration
 	config := loadConfig()
 
-	log.Printf("Starting API server on port %s", config.Port)
+	log.Printf("🔥 Hot reload test: API server starting on port %s - changes detected!", config.Port)
 
 	// Initialize database
 	db, err := database.Initialize(config.DatabaseURL)
