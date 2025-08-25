@@ -1,0 +1,28 @@
+{
+    "swagger": "2.0",
+    "info": {
+        "description": "Comprehensive REST API for managing music collections, downloads, monitoring, and analytics with enterprise-grade features including background job processing, webhook notifications, and detailed analytics.",
+        "title": "Nugs Collection API",
+        "termsOfService": "https://example.com/terms",
+        "contact": {
+            "name": "Nugs Collection API Support",
+            "email": "support@example.com"
+        },
+        "license": {
+            "name": "MIT",
+            "url": "https://opensource.org/licenses/MIT"
+        },
+        "version": "1.0.0"
+    },
+    "host": "localhost:8080",
+    "basePath": "/api/v1",
+    "paths": {},
+    "securityDefinitions": {
+        "BearerAuth": {
+            "description": "Type \"Bearer\" followed by a space and JWT token.",
+            "type": "apiKey",
+            "name": "Authorization",
+            "in": "header"
+        }
+    }
+}

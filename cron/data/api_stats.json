@@ -1,0 +1,33 @@
+{
+  "total_requests_today": 20,
+  "requests_this_hour": 2,
+  "requests_this_minute": 1,
+  "last_request_time": "2025-08-24T18:33:51-04:00",
+  "endpoints": {
+    "catalog.artists": {
+      "count": 1,
+      "errors": 0
+    },
+    "catalog.containersAll": {
+      "count": 3,
+      "errors": 0
+    },
+    "catalog.containersAll.full": {
+      "count": 23,
+      "errors": 0
+    },
+    "user.site.login": {
+      "count": 3,
+      "errors": 0
+    },
+    "user.site.login.secure": {
+      "count": 3,
+      "errors": 0
+    }
+  },
+  "consecutive_errors": 0,
+  "circuit_breaker_open": false,
+  "current_date": "2025-08-24",
+  "current_hour": 18,
+  "current_minute": 33
+}
