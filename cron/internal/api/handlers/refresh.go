@@ -2,6 +2,7 @@ package handlers
 
 import (
 	"database/sql"
+	"log"
 	"net/http"
 	"strconv"
 	"time"
@@ -220,13 +221,21 @@ func (h *RefreshHandler) GetRefreshInfo(c *gin.Context) {
 	var lastRefresh sql.NullString
 	var totalShows, totalArtists int64
 
-	h.RefreshService.DB.QueryRow(`
+	if err := h.RefreshService.DB.QueryRow(`
 		SELECT value FROM system_config 
 		WHERE key = 'last_catalog_refresh'
-	`).Scan(&lastRefresh)
+	`).Scan(&lastRefresh); err != nil {
+		log.Printf("Warning: failed to get last refresh time: %v", err)
+	}
 
-	h.RefreshService.DB.QueryRow("SELECT COUNT(*) FROM shows").Scan(&totalShows)
-	h.RefreshService.DB.QueryRow("SELECT COUNT(*) FROM artists").Scan(&totalArtists)
+	if err := h.RefreshService.DB.QueryRow("SELECT COUNT(*) FROM shows").Scan(&totalShows); err != nil {
+		log.Printf("Warning: failed to get total shows: %v", err)
+		totalShows = 0
+	}
+	if err := h.RefreshService.DB.QueryRow("SELECT COUNT(*) FROM artists").Scan(&totalArtists); err != nil {
+		log.Printf("Warning: failed to get total artists: %v", err)
+		totalArtists = 0
+	}
 
 	info := gin.H{
 		"total_shows":   totalShows,

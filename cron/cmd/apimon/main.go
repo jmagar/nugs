@@ -237,7 +237,9 @@ func enableEmergencyStop() {
 	defer file.Close()
 
 	timestamp := time.Now().Format(time.RFC3339)
-	file.WriteString(fmt.Sprintf("Emergency stop enabled at: %s\n", timestamp))
+	if _, err := file.WriteString(fmt.Sprintf("Emergency stop enabled at: %s\n", timestamp)); err != nil {
+		fmt.Printf("Warning: failed to write to emergency stop file: %v\n", err)
+	}
 
 	fmt.Println("Emergency stop ENABLED - All API requests will be blocked!")
 	fmt.Println("Use 'api_monitor start' to re-enable API requests.")

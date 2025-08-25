@@ -3,7 +3,6 @@ package catalog
 import (
 	"encoding/json"
 	"fmt"
-	"io/ioutil"
 	"log"
 	"os"
 	"sort"
@@ -218,7 +217,7 @@ func (cm *CatalogManager) refreshCatalog() error {
 
 // loadCatalogCache loads the cached catalog from disk
 func (cm *CatalogManager) loadCatalogCache() (*CatalogCache, error) {
-	data, err := ioutil.ReadFile(cm.catalogFile)
+	data, err := os.ReadFile(cm.catalogFile)
 	if err != nil {
 		return nil, fmt.Errorf("failed to read catalog cache: %v", err)
 	}
@@ -238,7 +237,7 @@ func (cm *CatalogManager) saveCatalogCache(cache *CatalogCache) error {
 		return err
 	}
 
-	return ioutil.WriteFile(cm.catalogFile, data, 0644)
+	return os.WriteFile(cm.catalogFile, data, 0644)
 }
 
 // PrintCatalogStats prints statistics about the catalog

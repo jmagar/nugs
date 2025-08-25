@@ -3,6 +3,7 @@ package handlers
 import (
 	"database/sql"
 	"fmt"
+	"log"
 	"net/http"
 	"strconv"
 	"strings"
@@ -92,10 +93,7 @@ func (h *AnalyticsHandler) GetArtistAnalytics(c *gin.Context) {
 		Limit:      limit,
 	}
 
-	// Parse artist IDs if provided
-	if artistIDsStr := c.Query("artist_ids"); artistIDsStr != "" {
-		// Could parse comma-separated IDs, simplified for now
-	}
+	// Note: artist_ids filter not implemented yet - could parse comma-separated IDs
 
 	analytics, err := h.AnalyticsService.GetArtistAnalytics(query)
 	if err != nil {
@@ -374,13 +372,18 @@ func (h *AnalyticsHandler) GetDashboardSummary(c *gin.Context) {
 	// Collection overview
 	var totalArtists, totalShows, totalDownloads int64
 	var totalSizeGB float64
-	h.DB.QueryRow(`
+	row := h.DB.QueryRow(`
 		SELECT 
 			(SELECT COUNT(*) FROM artists) as total_artists,
 			(SELECT COUNT(*) FROM shows) as total_shows,
 			(SELECT COUNT(*) FROM downloads) as total_downloads,
 			(SELECT COALESCE(SUM(file_size), 0) / 1073741824.0 FROM downloads WHERE status = 'completed') as total_size_gb
-	`).Scan(&totalArtists, &totalShows, &totalDownloads, &totalSizeGB)
+	`)
+	if err := row.Scan(&totalArtists, &totalShows, &totalDownloads, &totalSizeGB); err != nil {
+		log.Printf("Error scanning dashboard stats: %v", err)
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to get dashboard stats"})
+		return
+	}
 
 	summary["collection"] = gin.H{
 		"total_artists":   totalArtists,
@@ -391,8 +394,14 @@ func (h *AnalyticsHandler) GetDashboardSummary(c *gin.Context) {
 
 	// Recent activity (last 24 hours)
 	var recentShows, recentDownloads int64
-	h.DB.QueryRow(`SELECT COUNT(*) FROM shows WHERE created_at >= datetime('now', '-1 day')`).Scan(&recentShows)
-	h.DB.QueryRow(`SELECT COUNT(*) FROM downloads WHERE created_at >= datetime('now', '-1 day')`).Scan(&recentDownloads)
+	if err := h.DB.QueryRow(`SELECT COUNT(*) FROM shows WHERE created_at >= datetime('now', '-1 day')`).Scan(&recentShows); err != nil {
+		log.Printf("Error scanning recent shows: %v", err)
+		recentShows = 0
+	}
+	if err := h.DB.QueryRow(`SELECT COUNT(*) FROM downloads WHERE created_at >= datetime('now', '-1 day')`).Scan(&recentDownloads); err != nil {
+		log.Printf("Error scanning recent downloads: %v", err)
+		recentDownloads = 0
+	}
 
 	summary["recent_activity"] = gin.H{
 		"new_shows_24h":     recentShows,
@@ -401,7 +410,10 @@ func (h *AnalyticsHandler) GetDashboardSummary(c *gin.Context) {
 
 	// System status
 	var activeMonitors, runningJobs, failedJobs int64
-	h.DB.QueryRow(`SELECT COUNT(*) FROM artist_monitors WHERE status = 'active'`).Scan(&activeMonitors)
+	if err := h.DB.QueryRow(`SELECT COUNT(*) FROM artist_monitors WHERE status = 'active'`).Scan(&activeMonitors); err != nil {
+		log.Printf("Warning: failed to get active monitors: %v", err)
+		activeMonitors = 0
+	}
 
 	jobs := h.AnalyticsService.JobManager.ListJobs()
 	for _, job := range jobs {
@@ -460,7 +472,10 @@ func (h *AnalyticsHandler) GetHealthScore(c *gin.Context) {
 
 	// Database health (check for recent activity)
 	var recentActivity int64
-	h.DB.QueryRow(`SELECT COUNT(*) FROM shows WHERE created_at >= datetime('now', '-7 days')`).Scan(&recentActivity)
+	if err := h.DB.QueryRow(`SELECT COUNT(*) FROM shows WHERE created_at >= datetime('now', '-7 days')`).Scan(&recentActivity); err != nil {
+		log.Printf("Warning: failed to get recent activity: %v", err)
+		recentActivity = 0
+	}
 	if recentActivity > 0 {
 		score.Categories["database"] = 90
 	} else {
@@ -471,10 +486,14 @@ func (h *AnalyticsHandler) GetHealthScore(c *gin.Context) {
 
 	// Download health (check success rate)
 	var totalDownloads, completedDownloads int64
-	h.DB.QueryRow(`
+	if err := h.DB.QueryRow(`
 		SELECT COUNT(*), COUNT(CASE WHEN status = 'completed' THEN 1 END)
 		FROM downloads WHERE created_at >= datetime('now', '-7 days')
-	`).Scan(&totalDownloads, &completedDownloads)
+	`).Scan(&totalDownloads, &completedDownloads); err != nil {
+		log.Printf("Warning: failed to get download health stats: %v", err)
+		totalDownloads = 0
+		completedDownloads = 0
+	}
 
 	if totalDownloads > 0 {
 		successRate := float64(completedDownloads) / float64(totalDownloads) * 100
@@ -493,7 +512,10 @@ func (h *AnalyticsHandler) GetHealthScore(c *gin.Context) {
 
 	// Monitoring health
 	var activeMonitors int64
-	h.DB.QueryRow(`SELECT COUNT(*) FROM artist_monitors WHERE status = 'active'`).Scan(&activeMonitors)
+	if err := h.DB.QueryRow(`SELECT COUNT(*) FROM artist_monitors WHERE status = 'active'`).Scan(&activeMonitors); err != nil {
+		log.Printf("Warning: failed to get monitoring health stats: %v", err)
+		activeMonitors = 0
+	}
 	if activeMonitors > 0 {
 		score.Categories["monitoring"] = 85
 	} else {

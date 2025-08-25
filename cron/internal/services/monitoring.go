@@ -3,6 +3,7 @@ package services
 import (
 	"database/sql"
 	"fmt"
+	"log"
 	"os/exec"
 	"strconv"
 	"strings"
@@ -138,7 +139,9 @@ func (s *MonitoringService) DeleteMonitor(monitorID int) error {
 	}
 
 	// Also delete related alerts
-	s.DB.Exec("DELETE FROM monitor_alerts WHERE monitor_id = ?", monitorID)
+	if _, err := s.DB.Exec("DELETE FROM monitor_alerts WHERE monitor_id = ?", monitorID); err != nil {
+		log.Printf("Warning: failed to delete monitor alerts: %v", err)
+	}
 
 	return nil
 }
@@ -201,7 +204,10 @@ func (s *MonitoringService) CheckArtist(artistID int) (*models.CheckResult, erro
 
 	// Get updated show count
 	var newCurrentCount int
-	s.DB.QueryRow(`SELECT COUNT(*) FROM shows WHERE artist_id = ?`, artistID).Scan(&newCurrentCount)
+	if err := s.DB.QueryRow(`SELECT COUNT(*) FROM shows WHERE artist_id = ?`, artistID).Scan(&newCurrentCount); err != nil {
+		log.Printf("Warning: failed to get updated show count for artist %d: %v", artistID, err)
+		newCurrentCount = currentCount // Use original count as fallback
+	}
 
 	newShows := newCurrentCount - monitor.TotalShows
 	if newShows < 0 {
@@ -209,19 +215,23 @@ func (s *MonitoringService) CheckArtist(artistID int) (*models.CheckResult, erro
 	}
 
 	// Update monitor
-	s.DB.Exec(`
+	if _, err := s.DB.Exec(`
 		UPDATE artist_monitors 
 		SET total_shows = ?, new_shows_found = new_shows_found + ?, 
 		    last_checked = datetime('now'), updated_at = datetime('now')
 		WHERE id = ?
-	`, newCurrentCount, newShows, monitor.ID)
+	`, newCurrentCount, newShows, monitor.ID); err != nil {
+		log.Printf("Warning: failed to update monitor: %v", err)
+	}
 
 	if newShows > 0 {
-		s.DB.Exec(`
+		if _, err := s.DB.Exec(`
 			UPDATE artist_monitors 
 			SET last_new_show = datetime('now') 
 			WHERE id = ?
-		`, monitor.ID)
+		`, monitor.ID); err != nil {
+			log.Printf("Warning: failed to update last new show time: %v", err)
+		}
 
 		// Create alert for new shows
 		s.createAlert(monitor.ID, artistID, 0, models.AlertTypeNewShow,
@@ -243,11 +253,14 @@ func (s *MonitoringService) CheckArtist(artistID int) (*models.CheckResult, erro
 func (s *MonitoringService) runMonitoringCheck(job *models.Job) {
 	startTime := time.Now()
 
-	s.JobManager.UpdateJob(job.ID, func(j *models.Job) {
+	if err := s.JobManager.UpdateJob(job.ID, func(j *models.Job) {
 		j.Status = models.JobStatusRunning
 		j.StartedAt = startTime
 		j.Message = "Starting monitoring check for all active artists..."
-	})
+	}); err != nil {
+		log.Printf("Warning: failed to update job status: %v", err)
+		return
+	}
 
 	// Get all active monitors
 	rows, err := s.DB.Query(`
@@ -258,12 +271,14 @@ func (s *MonitoringService) runMonitoringCheck(job *models.Job) {
 	`)
 
 	if err != nil {
-		s.JobManager.UpdateJob(job.ID, func(j *models.Job) {
+		if updateErr := s.JobManager.UpdateJob(job.ID, func(j *models.Job) {
 			j.Status = models.JobStatusFailed
 			j.Error = err.Error()
 			completedAt := time.Now()
 			j.CompletedAt = &completedAt
-		})
+		}); updateErr != nil {
+			log.Printf("Warning: failed to update job status: %v", updateErr)
+		}
 		return
 	}
 	defer rows.Close()
@@ -294,10 +309,12 @@ func (s *MonitoringService) runMonitoringCheck(job *models.Job) {
 		}
 
 		processedCount++
-		s.JobManager.UpdateJob(job.ID, func(j *models.Job) {
+		if err := s.JobManager.UpdateJob(job.ID, func(j *models.Job) {
 			j.Progress = int(float64(processedCount) / 10.0 * 90) // Reserve 10% for final processing
 			j.Message = fmt.Sprintf("Checking %s (%d of ?)", artistName, processedCount)
-		})
+		}); err != nil {
+			log.Printf("Warning: failed to update job progress: %v", err)
+		}
 
 		result, err := s.CheckArtist(artistID)
 		if err == nil && result.Success {
@@ -313,7 +330,7 @@ func (s *MonitoringService) runMonitoringCheck(job *models.Job) {
 
 	// Complete the job
 	completedAt := time.Now()
-	s.JobManager.UpdateJob(job.ID, func(j *models.Job) {
+	if err := s.JobManager.UpdateJob(job.ID, func(j *models.Job) {
 		j.Status = models.JobStatusCompleted
 		j.Progress = 100
 		j.Message = fmt.Sprintf("Monitoring check completed: %d/%d successful", successCount, processedCount)
@@ -324,14 +341,18 @@ func (s *MonitoringService) runMonitoringCheck(job *models.Job) {
 			"duration":        time.Since(startTime).String(),
 		}
 		j.CompletedAt = &completedAt
-	})
+	}); err != nil {
+		log.Printf("Warning: failed to update job completion status: %v", err)
+	}
 }
 
 func (s *MonitoringService) createAlert(monitorID, artistID, showID int, alertType models.AlertType, message, details string) {
-	s.DB.Exec(`
+	if _, err := s.DB.Exec(`
 		INSERT INTO monitor_alerts (monitor_id, artist_id, show_id, alert_type, message, details, created_at)
 		VALUES (?, ?, NULLIF(?, 0), ?, ?, ?, datetime('now'))
-	`, monitorID, artistID, showID, alertType, message, details)
+	`, monitorID, artistID, showID, alertType, message, details); err != nil {
+		log.Printf("Warning: failed to create alert: %v", err)
+	}
 }
 
 func (s *MonitoringService) GetMonitorStats() (*models.MonitorStats, error) {
@@ -351,27 +372,35 @@ func (s *MonitoringService) GetMonitorStats() (*models.MonitorStats, error) {
 	}
 
 	// Get alert counts
-	s.DB.QueryRow(`
+	if err := s.DB.QueryRow(`
 		SELECT COUNT(*) 
 		FROM monitor_alerts 
 		WHERE date(created_at) = date('now')
-	`).Scan(&stats.TotalAlertsToday)
+	`).Scan(&stats.TotalAlertsToday); err != nil {
+		log.Printf("Warning: failed to get total alerts today: %v", err)
+		stats.TotalAlertsToday = 0
+	}
 
-	s.DB.QueryRow(`
+	if err := s.DB.QueryRow(`
 		SELECT COUNT(*) 
 		FROM monitor_alerts 
 		WHERE status != 'acknowledged'
-	`).Scan(&stats.UnacknowledgedAlerts)
+	`).Scan(&stats.UnacknowledgedAlerts); err != nil {
+		log.Printf("Warning: failed to get unacknowledged alerts: %v", err)
+		stats.UnacknowledgedAlerts = 0
+	}
 
 	// Get last check time
 	var lastCheckStr sql.NullString
-	s.DB.QueryRow(`
+	if err := s.DB.QueryRow(`
 		SELECT last_check 
 		FROM artist_monitors 
 		WHERE last_check IS NOT NULL 
 		ORDER BY last_check DESC 
 		LIMIT 1
-	`).Scan(&lastCheckStr)
+	`).Scan(&lastCheckStr); err != nil {
+		log.Printf("Warning: failed to get last check time: %v", err)
+	}
 
 	if lastCheckStr.Valid {
 		if t, err := time.Parse("2006-01-02 15:04:05", lastCheckStr.String); err == nil {

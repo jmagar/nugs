@@ -9,6 +9,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
+	"log"
 	"net/http"
 	"strings"
 	"time"
@@ -162,7 +163,9 @@ func (s *WebhookService) DeleteWebhook(webhookID int) error {
 	}
 
 	// Delete related deliveries
-	s.DB.Exec("DELETE FROM webhook_deliveries WHERE webhook_id = ?", webhookID)
+	if _, err := s.DB.Exec("DELETE FROM webhook_deliveries WHERE webhook_id = ?", webhookID); err != nil {
+		log.Printf("Warning: failed to delete webhook deliveries: %v", err)
+	}
 
 	return nil
 }
@@ -278,7 +281,9 @@ func (s *WebhookService) deliverWebhook(webhook *models.Webhook, event models.We
 			go s.deliverWebhook(webhook, event, data, attempt+1)
 		} else {
 			// Mark webhook as failed after max retries
-			s.DB.Exec("UPDATE webhooks SET status = 'failed', failure_count = failure_count + 1 WHERE id = ?", webhook.ID)
+			if _, err := s.DB.Exec("UPDATE webhooks SET status = 'failed', failure_count = failure_count + 1 WHERE id = ?", webhook.ID); err != nil {
+				log.Printf("Warning: failed to update webhook status: %v", err)
+			}
 		}
 		return
 	}
@@ -300,11 +305,13 @@ func (s *WebhookService) deliverWebhook(webhook *models.Webhook, event models.We
 
 	if success {
 		// Update webhook success stats
-		s.DB.Exec(`
+		if _, err := s.DB.Exec(`
 			UPDATE webhooks 
 			SET last_fired = datetime('now'), last_status = ?, failure_count = 0
 			WHERE id = ?
-		`, resp.StatusCode, webhook.ID)
+		`, resp.StatusCode, webhook.ID); err != nil {
+			log.Printf("Warning: failed to update webhook stats: %v", err)
+		}
 	} else {
 		// Retry if needed
 		if attempt < webhook.Retries {
@@ -313,21 +320,25 @@ func (s *WebhookService) deliverWebhook(webhook *models.Webhook, event models.We
 			go s.deliverWebhook(webhook, event, data, attempt+1)
 		} else {
 			// Mark as failed
-			s.DB.Exec(`
+			if _, err := s.DB.Exec(`
 				UPDATE webhooks 
 				SET last_status = ?, failure_count = failure_count + 1
 				WHERE id = ?
-			`, resp.StatusCode, webhook.ID)
+			`, resp.StatusCode, webhook.ID); err != nil {
+				log.Printf("Warning: failed to update webhook failure status: %v", err)
+			}
 		}
 	}
 }
 
 func (s *WebhookService) recordDelivery(webhookID int, event models.WebhookEvent, url, payload, headers string, statusCode int, response, errorMsg string, duration, attempt int, success bool) {
-	s.DB.Exec(`
+	if _, err := s.DB.Exec(`
 		INSERT INTO webhook_deliveries (webhook_id, event, url, payload, headers, status_code, 
 		                               response, error, duration_ms, attempt, success, created_at)
 		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, datetime('now'))
-	`, webhookID, event, url, payload, headers, statusCode, response, errorMsg, duration, attempt, success)
+	`, webhookID, event, url, payload, headers, statusCode, response, errorMsg, duration, attempt, success); err != nil {
+		log.Printf("Warning: failed to record webhook delivery: %v", err)
+	}
 }
 
 func (s *WebhookService) generateSignature(secret string, payload []byte) string {
@@ -564,14 +575,20 @@ func (s *WebhookService) GetWebhookStats() (*models.WebhookStats, error) {
 	}
 
 	// Get delivery stats
-	s.DB.QueryRow(`
+	if err := s.DB.QueryRow(`
 		SELECT 
 			COUNT(*) as total,
 			COUNT(CASE WHEN success = 1 THEN 1 END) as successful,
 			COUNT(CASE WHEN success = 0 THEN 1 END) as failed,
 			COALESCE(AVG(duration_ms), 0) as avg_duration
 		FROM webhook_deliveries
-	`).Scan(&stats.TotalDeliveries, &stats.SuccessfulDeliveries, &stats.FailedDeliveries, &stats.AverageResponseTime)
+	`).Scan(&stats.TotalDeliveries, &stats.SuccessfulDeliveries, &stats.FailedDeliveries, &stats.AverageResponseTime); err != nil {
+		log.Printf("Warning: failed to get webhook delivery stats: %v", err)
+		stats.TotalDeliveries = 0
+		stats.SuccessfulDeliveries = 0
+		stats.FailedDeliveries = 0
+		stats.AverageResponseTime = 0
+	}
 
 	// Calculate success rate
 	if stats.TotalDeliveries > 0 {

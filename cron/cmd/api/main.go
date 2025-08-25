@@ -142,7 +142,10 @@ func setupRouter(config *Config, db *sql.DB) *gin.Engine {
 				var id int
 				var username, email, role string
 				var active bool
-				rows.Scan(&id, &username, &email, &role, &active)
+				if err := rows.Scan(&id, &username, &email, &role, &active); err != nil {
+					log.Printf("Error scanning row: %v", err)
+					continue
+				}
 				users = append(users, map[string]interface{}{
 					"id": id, "username": username, "email": email, "role": role, "active": active,
 				})

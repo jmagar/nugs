@@ -3,8 +3,8 @@ package main
 import (
 	"encoding/json"
 	"fmt"
-	"io/ioutil"
 	"log"
+	"os"
 	"os/exec"
 	"path/filepath"
 	"strings"
@@ -124,7 +124,7 @@ func main() {
 }
 
 func loadConfig(filename string) (*models.Config, error) {
-	data, err := ioutil.ReadFile(filename)
+	data, err := os.ReadFile(filename)
 	if err != nil {
 		return nil, err
 	}
@@ -135,7 +135,7 @@ func loadConfig(filename string) (*models.Config, error) {
 }
 
 func loadMonitorConfig(filename string) (*models.MonitorConfig, error) {
-	data, err := ioutil.ReadFile(filename)
+	data, err := os.ReadFile(filename)
 	if err != nil {
 		return nil, err
 	}
@@ -146,7 +146,7 @@ func loadMonitorConfig(filename string) (*models.MonitorConfig, error) {
 }
 
 func loadShowsData() *models.ShowsData {
-	data, err := ioutil.ReadFile("data/shows.json")
+	data, err := os.ReadFile("data/shows.json")
 	if err != nil {
 		// File doesn't exist, return empty struct
 		return &models.ShowsData{
@@ -155,7 +155,9 @@ func loadShowsData() *models.ShowsData {
 	}
 
 	var shows models.ShowsData
-	json.Unmarshal(data, &shows)
+	if err := json.Unmarshal(data, &shows); err != nil {
+		log.Printf("Warning: failed to unmarshal shows data: %v", err)
+	}
 	if shows.Artists == nil {
 		shows.Artists = make(map[string]models.ArtistShowData)
 	}
@@ -172,8 +174,14 @@ func loadShowsData() *models.ShowsData {
 }
 
 func saveShowsData(shows *models.ShowsData) {
-	data, _ := json.MarshalIndent(shows, "", "  ")
-	ioutil.WriteFile("data/shows.json", data, 0644)
+	data, err := json.MarshalIndent(shows, "", "  ")
+	if err != nil {
+		fmt.Printf("Warning: failed to marshal shows data: %v\n", err)
+		return
+	}
+	if err := os.WriteFile("data/shows.json", data, 0644); err != nil {
+		fmt.Printf("Warning: failed to write shows data: %v\n", err)
+	}
 }
 
 func isShowDownloaded(artistName string, containerID int, shows *models.ShowsData) bool {

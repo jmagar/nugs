@@ -2,6 +2,7 @@ package handlers
 
 import (
 	"database/sql"
+	"log"
 	"net/http"
 	"strconv"
 	"strings"
@@ -185,7 +186,7 @@ func (h *DownloadHandler) QueueDownload(c *gin.Context) {
 	}
 
 	// Normalize format and quality values - database expects uppercase formats
-	formatStr := "FLAC" // Default
+	var formatStr string
 	switch strings.ToLower(req.Format) {
 	case "mp3":
 		formatStr = "MP3"
@@ -454,7 +455,11 @@ func (h *DownloadHandler) ReorderQueue(c *gin.Context) {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to start transaction"})
 		return
 	}
-	defer tx.Rollback()
+	defer func() {
+		if err := tx.Rollback(); err != nil && err != sql.ErrTxDone {
+			log.Printf("Warning: failed to rollback transaction: %v", err)
+		}
+	}()
 
 	// Update positions
 	for i, downloadID := range downloadIDs {

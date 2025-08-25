@@ -1530,10 +1530,3 @@ func generateHTMLContent(reports []GapReport, summary ReportSummary) string {
 
 	return html
 }
-
-func min(a, b int) int {
-	if a < b {
-		return a
-	}
-	return b
-}

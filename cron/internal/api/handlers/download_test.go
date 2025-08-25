@@ -285,7 +285,9 @@ func TestDownloadHandler_CancelDownload(t *testing.T) {
 
 	// Extract download_id from response for use in cancel test
 	var queueResp map[string]interface{}
-	json.Unmarshal(w.Body.Bytes(), &queueResp)
+	if err := json.Unmarshal(w.Body.Bytes(), &queueResp); err != nil {
+		t.Logf("Warning: failed to unmarshal queue response: %v", err)
+	}
 	createdDownloadID := "1" // Use ID 1 as that's what gets created
 
 	tests := []struct {

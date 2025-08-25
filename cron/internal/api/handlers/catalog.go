@@ -120,25 +120,16 @@ func (h *CatalogHandler) GetArtists(c *gin.Context) {
 
 	// Parse filters
 	search := c.Query("search")
-	monitoredOnly := c.Query("monitored") == "true"
+	// Note: monitored filter functionality requires joins with monitors table - not implemented yet
 
 	// Build WHERE clause
 	whereClause := "WHERE 1=1"
 	args := []interface{}{}
-	argIndex := 1
 
 	if search != "" {
 		whereClause += " AND (name LIKE ? OR slug LIKE ?)"
 		searchPattern := "%" + search + "%"
 		args = append(args, searchPattern, searchPattern)
-		argIndex += 2
-	}
-
-	// Note: monitored functionality requires joins with monitors table
-	// For now, just ignore this filter if no monitors exist
-	if monitoredOnly {
-		// This would need a more complex query in production
-		// whereClause += " AND EXISTS(SELECT 1 FROM monitors m WHERE m.artist_id = artists.id AND m.status = 'active')"
 	}
 
 	// Count total records
